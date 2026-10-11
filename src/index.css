@@ -1,0 +1,73 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap");
+@import "tailwindcss";
+
+:root {
+  --navy: #0a0e1a;
+  --charcoal: #0f1422;
+  --gold: #c9a84c;
+  --gold-light: #e8b84b;
+  --platinum: #d6dee8;
+  --gold-glow: rgba(201, 168, 76, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background-color: #0a0e1a;
+  color: #d6dee8;
+  font-family: "DM Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: "Cormorant Garamond", serif;
+}
+
+/* Fade-in slide-up animation */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Glass card */
+.glass {
+  background: rgba(15, 20, 34, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(201, 168, 76, 0.18);
+}
+
+/* Gold gradient text */
+.gold-text {
+  background: linear-gradient(135deg, #c9a84c, #e8b84b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0e1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9a84c44;
+  border-radius: 3px;
+}

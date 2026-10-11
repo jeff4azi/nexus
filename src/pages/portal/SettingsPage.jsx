@@ -1,0 +1,1019 @@
+import { useState } from "react";
+import { Eye, EyeOff, Check, Upload, Plus, Trash2 } from "lucide-react";
+import {
+  SectionCard,
+  Badge,
+  GoldButton,
+  PageHeader,
+} from "../../components/portal/PortalUI";
+import { useAuth } from "../../context/AuthContext";
+import { useBankAccounts, useCryptoWallets, useLoginSessions } from "../../hooks/usePortalData";
+
+const tabs = [
+  "Personal Info",
+  "Security",
+  "Bank Accounts",
+  "Crypto Wallets",
+  "Preferences",
+  "Notifications",
+];
+
+const fmtDate = (d) =>
+  d
+    ? new Date(d).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
+function Toggle({ on, onChange }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      style={{
+        width: 44,
+        height: 24,
+        borderRadius: 12,
+        border: "none",
+        cursor: "pointer",
+        position: "relative",
+        transition: "background 0.3s",
+        background: on
+          ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
+          : "rgba(255,255,255,0.1)",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 3,
+          left: on ? 23 : 3,
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          background: "#fff",
+          transition: "left 0.3s",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+        }}
+      />
+    </button>
+  );
+}
+
+function Field({ label, value, onChange, readOnly, type = "text", hint }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#D6DEE8",
+          opacity: 0.65,
+          letterSpacing: 0.5,
+        }}
+      >
+        {label}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        readOnly={readOnly}
+        style={{
+          background: readOnly
+            ? "rgba(255,255,255,0.02)"
+            : "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(201,168,76,0.15)",
+          borderRadius: 8,
+          padding: "12px 14px",
+          color: readOnly ? "#D6DEE8" : "#fff",
+          fontSize: 14,
+          outline: "none",
+          fontFamily: "DM Sans, sans-serif",
+          opacity: readOnly ? 0.6 : 1,
+          cursor: readOnly ? "not-allowed" : "text",
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+        onFocus={(e) => {
+          if (!readOnly) e.target.style.borderColor = "rgba(201,168,76,0.5)";
+        }}
+        onBlur={(e) => (e.target.style.borderColor = "rgba(201,168,76,0.15)")}
+      />
+      {hint && (
+        <p style={{ fontSize: 11, color: "#D6DEE8", opacity: 0.4, margin: 0 }}>
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  const { user, updateProfile } = useAuth();
+  const {
+    accounts,
+    loading: accsLoading,
+    addAccount,
+    removeAccount,
+    setDefault,
+  } = useBankAccounts();
+  const { sessions, loading: sessionsLoading } = useLoginSessions();
+  const { wallets, loading: walletsLoading, addWallet, removeWallet } = useCryptoWallets();
+
+  const [activeTab, setActiveTab] = useState("Personal Info");
+  const [form, setForm] = useState({
+    firstName: user?.firstName ?? "",
+    lastName: user?.lastName ?? "",
+    phone: user?.phone ?? "",
+    dob: user?.dateOfBirth ?? "",
+    country: user?.country ?? "",
+    city: user?.city ?? "",
+    address: user?.address ?? "",
+    ssnLast4: "",
+  });
+  const [newAccount, setNewAccount] = useState({
+    bank_name: "",
+    account_name: "",
+    account_number: "",
+    routing_code: "",
+    account_type: "Savings",
+  });
+  const [newWallet, setNewWallet] = useState({ asset: "USDT", network: "TRC-20", wallet_address: "", label: "" });
+  const [showPw, setShowPw] = useState({
+    current: false,
+    new: false,
+    confirm: false,
+  });
+  const [twoFA, setTwoFA] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState({
+    depositEmail: true,
+    withdrawalEmail: true,
+    planActivatedEmail: true,
+    maturityReminderEmail: true,
+    maturedEmail: true,
+    statementEmail: false,
+    newLoginEmail: true,
+    passwordChangedEmail: true,
+    kycEmail: true,
+    depositApp: true,
+    withdrawalApp: true,
+    planActivatedApp: true,
+    maturityReminderApp: true,
+    maturedApp: true,
+    statementApp: false,
+    newLoginApp: true,
+    passwordChangedApp: false,
+    kycApp: true,
+  });
+
+  const set = (f) => (v) => setForm((p) => ({ ...p, [f]: v }));
+  const handleSave = async () => {
+    const { error } = await updateProfile({
+      first_name: form.firstName.trim(),
+      last_name: form.lastName.trim(),
+      phone: form.phone.trim() || null,
+      date_of_birth: form.dob || null,
+      country: form.country.trim() || null,
+      city: form.city.trim() || null,
+      address: form.address.trim() || null,
+      ssn_last4: form.ssnLast4.trim() || null,
+    });
+    if (error) return console.error("[profile update]", error.message);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  async function handleAddAccount() {
+    if (!newAccount.bank_name || !newAccount.account_name || !newAccount.account_number) return;
+    const { error } = await addAccount(newAccount);
+    if (error) return console.error("[bank account]", error.message);
+    setNewAccount({ bank_name: "", account_name: "", account_number: "", routing_code: "", account_type: "Savings" });
+  }
+
+  async function handleAddWallet() {
+    if (!newWallet.wallet_address.trim()) return;
+    const { error } = await addWallet({ ...newWallet, wallet_address: newWallet.wallet_address.trim(), label: newWallet.label.trim() || null });
+    if (error) return console.error("[crypto wallet]", error.message);
+    setNewWallet({ asset: "USDT", network: "TRC-20", wallet_address: "", label: "" });
+  }
+
+  const notifGroups = [
+    { key: "depositEmail", label: "Deposit confirmed" },
+    { key: "withdrawalEmail", label: "Withdrawal processed" },
+    { key: "planActivatedEmail", label: "Investment plan activated" },
+    { key: "maturityReminderEmail", label: "Plan maturity reminder (7 days)" },
+    { key: "maturedEmail", label: "Plan matured and payout credited" },
+    { key: "statementEmail", label: "Monthly statement ready" },
+    { key: "newLoginEmail", label: "Login from new device" },
+    { key: "passwordChangedEmail", label: "Password changed" },
+    { key: "kycEmail", label: "KYC status update" },
+  ];
+
+  return (
+    <div>
+      <PageHeader
+        title="Profile & Settings"
+        subtitle="Manage your personal information, security, and preferences."
+      />
+
+      {/* Tab bar */}
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap",
+          marginBottom: 28,
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(201,168,76,0.1)",
+          borderRadius: 12,
+          padding: 5,
+        }}
+      >
+        {tabs.map((t) => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            style={{
+              padding: "9px 18px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+              transition: "all 0.2s",
+              fontFamily: "DM Sans, sans-serif",
+              whiteSpace: "nowrap",
+              background:
+                activeTab === t
+                  ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
+                  : "transparent",
+              color: activeTab === t ? "#0A0E1A" : "#D6DEE8",
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Personal Info ── */}
+      {activeTab === "Personal Info" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Profile Photo">
+            <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+              <div
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg, #C9A84C, #E8B84B)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: "#0A0E1A",
+                  flexShrink: 0,
+                }}
+              >
+                {user?.firstName?.[0] ?? ""}
+                {user?.lastName?.[0] ?? ""}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <GoldButton variant="outline">
+                  <Upload size={13} /> Upload Photo
+                </GoldButton>
+                <button
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#f87171",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    fontFamily: "DM Sans, sans-serif",
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Personal Details">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 16,
+              }}
+              className="portal-two-col"
+            >
+              <Field
+                label="First Name"
+                value={form.firstName}
+                onChange={set("firstName")}
+              />
+              <Field
+                label="Last Name"
+                value={form.lastName}
+                onChange={set("lastName")}
+              />
+              <Field
+                label="Email Address"
+                value={user?.email ?? ""}
+                readOnly
+                hint="Contact support to change your email."
+              />
+              <Field
+                label="Phone Number"
+                value={form.phone}
+                onChange={set("phone")}
+                type="tel"
+              />
+              <Field
+                label="Date of Birth"
+                value={form.dob}
+                onChange={set("dob")}
+                type="date"
+              />
+              <Field
+                label="Country"
+                value={form.country}
+                onChange={set("country")}
+              />
+              <Field label="City" value={form.city} onChange={set("city")} />
+              <Field
+                label="Residential Address"
+                value={form.address}
+                onChange={set("address")}
+              />
+              <Field
+                label="SSN (last 4 digits, optional)"
+                value={form.ssnLast4}
+                onChange={set("ssnLast4")}
+                hint="Used only to begin identity verification. We do not store your full SSN."
+                inputMode="numeric"
+              />
+            </div>
+            <div style={{ marginTop: 20 }}>
+              <GoldButton onClick={handleSave}>
+                {saved ? (
+                  <>
+                    <Check size={14} /> Saved!
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </GoldButton>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="KYC / Identity Verification">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 16,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 8,
+                  }}
+                >
+                  <span
+                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.7 }}
+                  >
+                    Verification Status:
+                  </span>
+                  <Badge
+                    label={
+                      user?.kycStatus === "Verified"
+                        ? "✓ Verified"
+                        : (user?.kycStatus ?? "Unverified")
+                    }
+                    color={user?.kycStatus === "Verified" ? "green" : "amber"}
+                  />
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Account Details">
+            {[
+              ["Account ID", user?.accountId ?? "—"],
+              ["Account Type", user?.accountType ?? "—"],
+              ["Date Joined", user?.dateJoined ?? "—"],
+              ["Account Status", user?.accountStatus ?? "—"],
+            ].map(([l, v]) => (
+              <div
+                key={l}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "12px 0",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                }}
+              >
+                <span style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.55 }}>
+                  {l}
+                </span>
+                <span style={{ fontSize: 13, color: "#fff", fontWeight: 500 }}>
+                  {v}
+                </span>
+              </div>
+            ))}
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Security ── */}
+      {activeTab === "Security" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Change Password">
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+                maxWidth: 440,
+              }}
+            >
+              {[
+                { key: "current", label: "Current Password" },
+                { key: "new", label: "New Password" },
+                { key: "confirm", label: "Confirm New Password" },
+              ].map((f) => (
+                <div key={f.key}>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#D6DEE8",
+                      opacity: 0.65,
+                      display: "block",
+                      marginBottom: 6,
+                    }}
+                  >
+                    {f.label}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPw[f.key] ? "text" : "password"}
+                      placeholder="••••••••"
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(201,168,76,0.15)",
+                        borderRadius: 8,
+                        padding: "12px 44px 12px 14px",
+                        color: "#fff",
+                        fontSize: 14,
+                        outline: "none",
+                        fontFamily: "DM Sans, sans-serif",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPw((p) => ({ ...p, [f.key]: !p[f.key] }))
+                      }
+                      style={{
+                        position: "absolute",
+                        right: 12,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#C9A84C",
+                        display: "flex",
+                      }}
+                    >
+                      {showPw[f.key] ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {[
+                  "At least 8 characters",
+                  "One uppercase letter",
+                  "One number",
+                  "One special character",
+                ].map((r) => (
+                  <div
+                    key={r}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      fontSize: 12,
+                      color: "#D6DEE8",
+                      opacity: 0.5,
+                    }}
+                  >
+                    <span style={{ color: "#C9A84C" }}>·</span> {r}
+                  </div>
+                ))}
+              </div>
+              <GoldButton style={{ alignSelf: "flex-start" }}>
+                Update Password
+              </GoldButton>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Two-Factor Authentication (2FA)">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 16,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.8 }}
+                  >
+                    Status:
+                  </span>
+                  <Badge
+                    label={twoFA ? "Enabled" : "Disabled"}
+                    color={twoFA ? "green" : "grey"}
+                  />
+                </div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "#D6DEE8",
+                    opacity: 0.5,
+                    margin: 0,
+                  }}
+                >
+                  Protect your account with an authenticator app or SMS OTP.
+                </p>
+              </div>
+              <Toggle on={twoFA} onChange={setTwoFA} />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Transaction PIN">
+            <p
+              style={{
+                fontSize: 13,
+                color: "#D6DEE8",
+                opacity: 0.65,
+                marginBottom: 16,
+              }}
+            >
+              Your 4-digit PIN is used to confirm withdrawals and sensitive
+              actions.
+            </p>
+            <GoldButton variant="outline">Change Transaction PIN</GoldButton>
+          </SectionCard>
+
+          <SectionCard title="Login Activity">
+            {sessionsLoading ? (
+              <p style={{ color: "#D6DEE8", opacity: 0.4, fontSize: 13 }}>
+                Loading…
+              </p>
+            ) : sessions.length === 0 ? (
+              <p
+                style={{
+                  color: "#D6DEE8",
+                  opacity: 0.4,
+                  fontSize: 13,
+                  textAlign: "center",
+                  padding: "20px 0",
+                }}
+              >
+                No login sessions recorded.
+              </p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 13,
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{ borderBottom: "1px solid rgba(201,168,76,0.1)" }}
+                    >
+                      {[
+                        "Date & Time",
+                        "Device",
+                        "Browser",
+                        "IP Address",
+                        "Location",
+                        "Status",
+                      ].map((c) => (
+                        <th
+                          key={c}
+                          style={{
+                            padding: "10px 14px",
+                            textAlign: "left",
+                            color: "#D6DEE8",
+                            opacity: 0.5,
+                            fontWeight: 600,
+                            fontSize: 11,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions.map((s) => (
+                      <tr
+                        key={s.id}
+                        style={{
+                          borderBottom: "1px solid rgba(255,255,255,0.04)",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: "13px 14px",
+                            color: "#D6DEE8",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {fmtDate(s.created_at)}
+                        </td>
+                        <td style={{ padding: "13px 14px", color: "#D6DEE8" }}>
+                          {s.device ?? "—"}
+                        </td>
+                        <td style={{ padding: "13px 14px", color: "#D6DEE8" }}>
+                          {s.browser ?? "—"}
+                        </td>
+                        <td style={{ padding: "13px 14px", color: "#D6DEE8" }}>
+                          {s.ip_address ?? "—"}
+                        </td>
+                        <td style={{ padding: "13px 14px", color: "#D6DEE8" }}>
+                          {s.location ?? "—"}
+                        </td>
+                        <td style={{ padding: "13px 14px" }}>
+                          <Badge
+                            label={s.is_current ? "Current" : "Ended"}
+                            color={s.is_current ? "green" : "grey"}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Bank Accounts ── */}
+      {activeTab === "Bank Accounts" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Saved Bank Accounts">
+            {accsLoading ? (
+              <p style={{ color: "#D6DEE8", opacity: 0.4, fontSize: 13 }}>
+                Loading…
+              </p>
+            ) : accounts.length === 0 ? (
+              <p
+                style={{
+                  color: "#D6DEE8",
+                  opacity: 0.4,
+                  fontSize: 13,
+                  textAlign: "center",
+                  padding: "20px 0",
+                }}
+              >
+                No bank accounts saved yet.
+              </p>
+            ) : (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              >
+                {accounts.map((acc) => (
+                  <div
+                    key={acc.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "16px 18px",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(201,168,76,0.12)",
+                      borderRadius: 12,
+                      flexWrap: "wrap",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: "#fff",
+                          marginBottom: 4,
+                        }}
+                      >
+                        {acc.bank_name} ****{acc.account_number.slice(-4)}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: "#D6DEE8", opacity: 0.6 }}
+                      >
+                        {acc.account_name} · {acc.account_type}
+                      </div>
+                    </div>
+                    <div
+                      style={{ display: "flex", gap: 8, alignItems: "center" }}
+                    >
+                      {acc.is_default && <Badge label="Default" color="gold" />}
+                      {!acc.is_default && (
+                        <button
+                          onClick={() => setDefault(acc.id)}
+                          style={{
+                            background: "none",
+                            border: "1px solid rgba(201,168,76,0.3)",
+                            borderRadius: 6,
+                            padding: "5px 12px",
+                            color: "#C9A84C",
+                            fontSize: 12,
+                            cursor: "pointer",
+                            fontFamily: "DM Sans, sans-serif",
+                          }}
+                        >
+                          Set Default
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeAccount(acc.id)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#f87171",
+                          display: "flex",
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Add New Bank Account">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 14,
+                maxWidth: 600,
+              }}
+              className="portal-two-col"
+            >
+              {[
+                {
+                  key: "bank_name",
+                  label: "Bank Name",
+                  placeholder: "e.g. GTBank",
+                },
+                {
+                  key: "account_name",
+                  label: "Account Name",
+                  placeholder: "Full name on account",
+                },
+                {
+                  key: "account_number",
+                  label: "Account Number",
+                  placeholder: "0000000000",
+                },
+                {
+                  key: "routing_code",
+                  label: "Routing / Sort Code",
+                  placeholder: "000000",
+                },
+              ].map((f) => (
+                <div key={f.key}>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#D6DEE8",
+                      opacity: 0.65,
+                      display: "block",
+                      marginBottom: 6,
+                    }}
+                  >
+                    {f.label}
+                  </label>
+                  <input
+                    value={newAccount[f.key]}
+                    onChange={(e) =>
+                      setNewAccount((p) => ({ ...p, [f.key]: e.target.value }))
+                    }
+                    placeholder={f.placeholder}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(201,168,76,0.15)",
+                      borderRadius: 8,
+                      padding: "12px 14px",
+                      color: "#fff",
+                      fontSize: 14,
+                      outline: "none",
+                      fontFamily: "DM Sans, sans-serif",
+                    }}
+                  />
+                </div>
+              ))}
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#D6DEE8",
+                    opacity: 0.65,
+                    display: "block",
+                    marginBottom: 6,
+                  }}
+                >
+                  Account Type
+                </label>
+                <select
+                  value={newAccount.account_type}
+                  onChange={(e) =>
+                    setNewAccount((p) => ({
+                      ...p,
+                      account_type: e.target.value,
+                    }))
+                  }
+                  style={{
+                    width: "100%",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(201,168,76,0.15)",
+                    borderRadius: 8,
+                    padding: "12px 14px",
+                    color: "#D6DEE8",
+                    fontSize: 14,
+                    outline: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option style={{ background: "#0F1422" }}>Savings</option>
+                  <option style={{ background: "#0F1422" }}>Current</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <GoldButton onClick={handleAddAccount}>
+                <Plus size={14} /> Save Account
+              </GoldButton>
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Crypto Wallets ── */}
+      {activeTab === "Crypto Wallets" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Saved Crypto Wallets">
+            <p style={{ color: "#D6DEE8", opacity: 0.65, fontSize: 13, marginTop: 0 }}>
+              Add a wallet you own for crypto withdrawals. Confirm the network carefully; transfers cannot be reversed.
+            </p>
+            {walletsLoading ? <p style={{ color: "#D6DEE8", opacity: 0.6 }}>Loading wallets…</p> : wallets.length === 0 ? <p style={{ color: "#D6DEE8", opacity: 0.6 }}>No crypto wallets saved yet.</p> : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {wallets.map((wallet) => <div key={wallet.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, border: "1px solid rgba(201,168,76,0.15)", borderRadius: 10 }}>
+                  <div><strong style={{ color: "#fff" }}>{wallet.label || `${wallet.asset} wallet`}</strong><div style={{ color: "#D6DEE8", opacity: 0.65, fontSize: 12, marginTop: 4 }}>{wallet.asset} · {wallet.network} · {wallet.wallet_address}</div></div>
+                  <button onClick={() => removeWallet(wallet.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer" }}><Trash2 size={16} /></button>
+                </div>)}
+              </div>
+            )}
+          </SectionCard>
+          <SectionCard title="Add Crypto Wallet">
+            <div className="portal-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {[['asset', 'Asset (e.g. USDT)'], ['network', 'Network (e.g. TRC-20)'], ['label', 'Wallet label (optional)'], ['wallet_address', 'Wallet address']].map(([key, label]) => <Field key={key} label={label} value={newWallet[key]} onChange={(value) => setNewWallet((current) => ({ ...current, [key]: value }))} />)}
+            </div>
+            <div style={{ marginTop: 16 }}><GoldButton onClick={handleAddWallet}><Plus size={14} /> Save Wallet</GoldButton></div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Preferences ── */}
+      {activeTab === "Preferences" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Display Preferences">
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {[
+                {
+                  label: "Currency Display",
+                  options: ["USD", "GBP", "EUR", "NGN"],
+                },
+                { label: "Theme", options: ["Dark"] },
+                { label: "Language", options: ["English"] },
+              ].map((pref) => (
+                <div
+                  key={pref.label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
+                  }}
+                >
+                  <span
+                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.8 }}
+                  >
+                    {pref.label}
+                  </span>
+                  <select
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(201,168,76,0.15)",
+                      borderRadius: 8,
+                      padding: "9px 14px",
+                      color: "#D6DEE8",
+                      fontSize: 13,
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {pref.options.map((o) => (
+                      <option key={o} style={{ background: "#0F1422" }}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Notifications ── */}
+      {activeTab === "Notifications" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <SectionCard title="Email Notifications">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {notifGroups.map((n) => (
+                <div
+                  key={n.key}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.8 }}
+                  >
+                    {n.label}
+                  </span>
+                  <Toggle
+                    on={notifPrefs[n.key]}
+                    onChange={(v) =>
+                      setNotifPrefs((p) => ({ ...p, [n.key]: v }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      <style>{`@media (max-width: 768px) { .portal-two-col { grid-template-columns: 1fr !important; } }`}</style>
+    </div>
+  );
+}
