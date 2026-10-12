@@ -7,12 +7,11 @@ import {
   PageHeader,
 } from "../../components/portal/PortalUI";
 import { useAuth } from "../../context/AuthContext";
-import { useBankAccounts, useCryptoWallets, useLoginSessions } from "../../hooks/usePortalData";
+import { useCryptoWallets, useLoginSessions } from "../../hooks/usePortalData";
 
 const tabs = [
   "Personal Info",
   "Security",
-  "Bank Accounts",
   "Crypto Wallets",
   "Preferences",
   "Notifications",
@@ -114,15 +113,13 @@ function Field({ label, value, onChange, readOnly, type = "text", hint }) {
 
 export default function SettingsPage() {
   const { user, updateProfile } = useAuth();
-  const {
-    accounts,
-    loading: accsLoading,
-    addAccount,
-    removeAccount,
-    setDefault,
-  } = useBankAccounts();
   const { sessions, loading: sessionsLoading } = useLoginSessions();
-  const { wallets, loading: walletsLoading, addWallet, removeWallet } = useCryptoWallets();
+  const {
+    wallets,
+    loading: walletsLoading,
+    addWallet,
+    removeWallet,
+  } = useCryptoWallets();
 
   const [activeTab, setActiveTab] = useState("Personal Info");
   const [form, setForm] = useState({
@@ -135,14 +132,12 @@ export default function SettingsPage() {
     address: user?.address ?? "",
     ssnLast4: "",
   });
-  const [newAccount, setNewAccount] = useState({
-    bank_name: "",
-    account_name: "",
-    account_number: "",
-    routing_code: "",
-    account_type: "Savings",
+  const [newWallet, setNewWallet] = useState({
+    asset: "USDT",
+    network: "TRC-20",
+    wallet_address: "",
+    label: "",
   });
-  const [newWallet, setNewWallet] = useState({ asset: "USDT", network: "TRC-20", wallet_address: "", label: "" });
   const [showPw, setShowPw] = useState({
     current: false,
     new: false,
@@ -188,18 +183,20 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2500);
   };
 
-  async function handleAddAccount() {
-    if (!newAccount.bank_name || !newAccount.account_name || !newAccount.account_number) return;
-    const { error } = await addAccount(newAccount);
-    if (error) return console.error("[bank account]", error.message);
-    setNewAccount({ bank_name: "", account_name: "", account_number: "", routing_code: "", account_type: "Savings" });
-  }
-
   async function handleAddWallet() {
     if (!newWallet.wallet_address.trim()) return;
-    const { error } = await addWallet({ ...newWallet, wallet_address: newWallet.wallet_address.trim(), label: newWallet.label.trim() || null });
+    const { error } = await addWallet({
+      ...newWallet,
+      wallet_address: newWallet.wallet_address.trim(),
+      label: newWallet.label.trim() || null,
+    });
     if (error) return console.error("[crypto wallet]", error.message);
-    setNewWallet({ asset: "USDT", network: "TRC-20", wallet_address: "", label: "" });
+    setNewWallet({
+      asset: "USDT",
+      network: "TRC-20",
+      wallet_address: "",
+      label: "",
+    });
   }
 
   const notifGroups = [
@@ -694,236 +691,106 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ── Bank Accounts ── */}
-      {activeTab === "Bank Accounts" && (
+      {/* ── Crypto Wallets ── */}
+      {activeTab === "Crypto Wallets" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <SectionCard title="Saved Bank Accounts">
-            {accsLoading ? (
-              <p style={{ color: "#D6DEE8", opacity: 0.4, fontSize: 13 }}>
-                Loading…
-              </p>
-            ) : accounts.length === 0 ? (
-              <p
-                style={{
-                  color: "#D6DEE8",
-                  opacity: 0.4,
-                  fontSize: 13,
-                  textAlign: "center",
-                  padding: "20px 0",
-                }}
-              >
-                No bank accounts saved yet.
+          <SectionCard title="Saved Crypto Wallets">
+            <p
+              style={{
+                color: "#D6DEE8",
+                opacity: 0.65,
+                fontSize: 13,
+                marginTop: 0,
+              }}
+            >
+              Add a wallet you own for crypto withdrawals. Confirm the network
+              carefully; transfers cannot be reversed.
+            </p>
+            {walletsLoading ? (
+              <p style={{ color: "#D6DEE8", opacity: 0.6 }}>Loading wallets…</p>
+            ) : wallets.length === 0 ? (
+              <p style={{ color: "#D6DEE8", opacity: 0.6 }}>
+                No crypto wallets saved yet.
               </p>
             ) : (
               <div
-                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
               >
-                {accounts.map((acc) => (
+                {wallets.map((wallet) => (
                   <div
-                    key={acc.id}
+                    key={wallet.id}
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
                       alignItems: "center",
-                      padding: "16px 18px",
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid rgba(201,168,76,0.12)",
-                      borderRadius: 12,
-                      flexWrap: "wrap",
+                      justifyContent: "space-between",
                       gap: 12,
+                      padding: 14,
+                      border: "1px solid rgba(201,168,76,0.15)",
+                      borderRadius: 10,
                     }}
                   >
                     <div>
+                      <strong style={{ color: "#fff" }}>
+                        {wallet.label || `${wallet.asset} wallet`}
+                      </strong>
                       <div
                         style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          color: "#fff",
-                          marginBottom: 4,
+                          color: "#D6DEE8",
+                          opacity: 0.65,
+                          fontSize: 12,
+                          marginTop: 4,
                         }}
                       >
-                        {acc.bank_name} ****{acc.account_number.slice(-4)}
-                      </div>
-                      <div
-                        style={{ fontSize: 12, color: "#D6DEE8", opacity: 0.6 }}
-                      >
-                        {acc.account_name} · {acc.account_type}
+                        {wallet.asset} · {wallet.network} ·{" "}
+                        {wallet.wallet_address}
                       </div>
                     </div>
-                    <div
-                      style={{ display: "flex", gap: 8, alignItems: "center" }}
+                    <button
+                      onClick={() => removeWallet(wallet.id)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#f87171",
+                        cursor: "pointer",
+                      }}
                     >
-                      {acc.is_default && <Badge label="Default" color="gold" />}
-                      {!acc.is_default && (
-                        <button
-                          onClick={() => setDefault(acc.id)}
-                          style={{
-                            background: "none",
-                            border: "1px solid rgba(201,168,76,0.3)",
-                            borderRadius: 6,
-                            padding: "5px 12px",
-                            color: "#C9A84C",
-                            fontSize: 12,
-                            cursor: "pointer",
-                            fontFamily: "DM Sans, sans-serif",
-                          }}
-                        >
-                          Set Default
-                        </button>
-                      )}
-                      <button
-                        onClick={() => removeAccount(acc.id)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "#f87171",
-                          display: "flex",
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </SectionCard>
-
-          <SectionCard title="Add New Bank Account">
+          <SectionCard title="Add Crypto Wallet">
             <div
+              className="portal-two-col"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
-                gap: 14,
-                maxWidth: 600,
+                gap: 16,
               }}
-              className="portal-two-col"
             >
               {[
-                {
-                  key: "bank_name",
-                  label: "Bank Name",
-                  placeholder: "e.g. GTBank",
-                },
-                {
-                  key: "account_name",
-                  label: "Account Name",
-                  placeholder: "Full name on account",
-                },
-                {
-                  key: "account_number",
-                  label: "Account Number",
-                  placeholder: "0000000000",
-                },
-                {
-                  key: "routing_code",
-                  label: "Routing / Sort Code",
-                  placeholder: "000000",
-                },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#D6DEE8",
-                      opacity: 0.65,
-                      display: "block",
-                      marginBottom: 6,
-                    }}
-                  >
-                    {f.label}
-                  </label>
-                  <input
-                    value={newAccount[f.key]}
-                    onChange={(e) =>
-                      setNewAccount((p) => ({ ...p, [f.key]: e.target.value }))
-                    }
-                    placeholder={f.placeholder}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid rgba(201,168,76,0.15)",
-                      borderRadius: 8,
-                      padding: "12px 14px",
-                      color: "#fff",
-                      fontSize: 14,
-                      outline: "none",
-                      fontFamily: "DM Sans, sans-serif",
-                    }}
-                  />
-                </div>
-              ))}
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#D6DEE8",
-                    opacity: 0.65,
-                    display: "block",
-                    marginBottom: 6,
-                  }}
-                >
-                  Account Type
-                </label>
-                <select
-                  value={newAccount.account_type}
-                  onChange={(e) =>
-                    setNewAccount((p) => ({
-                      ...p,
-                      account_type: e.target.value,
-                    }))
+                ["asset", "Asset (e.g. USDT)"],
+                ["network", "Network (e.g. TRC-20)"],
+                ["label", "Wallet label (optional)"],
+                ["wallet_address", "Wallet address"],
+              ].map(([key, label]) => (
+                <Field
+                  key={key}
+                  label={label}
+                  value={newWallet[key]}
+                  onChange={(value) =>
+                    setNewWallet((current) => ({ ...current, [key]: value }))
                   }
-                  style={{
-                    width: "100%",
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(201,168,76,0.15)",
-                    borderRadius: 8,
-                    padding: "12px 14px",
-                    color: "#D6DEE8",
-                    fontSize: 14,
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option style={{ background: "#0F1422" }}>Savings</option>
-                  <option style={{ background: "#0F1422" }}>Current</option>
-                </select>
-              </div>
+                />
+              ))}
             </div>
             <div style={{ marginTop: 16 }}>
-              <GoldButton onClick={handleAddAccount}>
-                <Plus size={14} /> Save Account
+              <GoldButton onClick={handleAddWallet}>
+                <Plus size={14} /> Save Wallet
               </GoldButton>
             </div>
-          </SectionCard>
-        </div>
-      )}
-
-      {/* ── Crypto Wallets ── */}
-      {activeTab === "Crypto Wallets" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <SectionCard title="Saved Crypto Wallets">
-            <p style={{ color: "#D6DEE8", opacity: 0.65, fontSize: 13, marginTop: 0 }}>
-              Add a wallet you own for crypto withdrawals. Confirm the network carefully; transfers cannot be reversed.
-            </p>
-            {walletsLoading ? <p style={{ color: "#D6DEE8", opacity: 0.6 }}>Loading wallets…</p> : wallets.length === 0 ? <p style={{ color: "#D6DEE8", opacity: 0.6 }}>No crypto wallets saved yet.</p> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {wallets.map((wallet) => <div key={wallet.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, border: "1px solid rgba(201,168,76,0.15)", borderRadius: 10 }}>
-                  <div><strong style={{ color: "#fff" }}>{wallet.label || `${wallet.asset} wallet`}</strong><div style={{ color: "#D6DEE8", opacity: 0.65, fontSize: 12, marginTop: 4 }}>{wallet.asset} · {wallet.network} · {wallet.wallet_address}</div></div>
-                  <button onClick={() => removeWallet(wallet.id)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer" }}><Trash2 size={16} /></button>
-                </div>)}
-              </div>
-            )}
-          </SectionCard>
-          <SectionCard title="Add Crypto Wallet">
-            <div className="portal-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              {[['asset', 'Asset (e.g. USDT)'], ['network', 'Network (e.g. TRC-20)'], ['label', 'Wallet label (optional)'], ['wallet_address', 'Wallet address']].map(([key, label]) => <Field key={key} label={label} value={newWallet[key]} onChange={(value) => setNewWallet((current) => ({ ...current, [key]: value }))} />)}
-            </div>
-            <div style={{ marginTop: 16 }}><GoldButton onClick={handleAddWallet}><Plus size={14} /> Save Wallet</GoldButton></div>
           </SectionCard>
         </div>
       )}

@@ -155,7 +155,7 @@ export default function DepositPage() {
   const currentBalance = totalReturns;
 
   // tabs: card & crypto only (bank transfer removed)
-  const [tab, setTab] = useState("card");
+  const [tab, setTab] = useState("crypto");
   const [crypto, setCrypto] = useState(cryptoOptions[0]);
   const [submitted, setSubmitted] = useState(false);
 
