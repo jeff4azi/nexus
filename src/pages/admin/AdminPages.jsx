@@ -516,7 +516,9 @@ export function OverviewPage() {
         .in("status", ["Pending", "Approved", "Processing"])
         .order("created_at", { ascending: true }),
   });
-  const users = useAdminData("profiles");
+  const users = useAdminData("profiles", {
+    filter: (q) => q.eq("role", "user"),
+  });
   const [dialog, setDialog] = useState(null);
   const [queues, setQueues] = useState({ d: [], w: [] });
   useEffect(() => {
@@ -685,7 +687,8 @@ function QueuePage({ title, eyebrow, table, mode, filter }) {
 }
 export function UsersPage() {
   const { data, loading, error, reload } = useAdminData("profiles", {
-    filter: (q) => q.order("created_at", { ascending: false }),
+    filter: (q) =>
+      q.eq("role", "user").order("created_at", { ascending: false }),
   });
   const [selected, setSelected] = useState(null),
     [search, setSearch] = useState("");
