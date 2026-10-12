@@ -33,6 +33,8 @@ import {
   WithdrawalsPage,
   FundingPage,
   AdminAccountsPage,
+  InvestmentsPage,
+  AdminNotificationsPage,
 } from "./pages/admin/AdminPages";
 
 function Portal({ children }) {
@@ -108,6 +110,22 @@ const router = createBrowserRouter([
     element: (
       <Admin>
         <AdminAccountsPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/investments",
+    element: (
+      <Admin>
+        <InvestmentsPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/notifications",
+    element: (
+      <Admin>
+        <AdminNotificationsPage />
       </Admin>
     ),
   },

@@ -516,9 +516,14 @@ export function OverviewPage() {
         .in("status", ["Pending", "Approved", "Processing"])
         .order("created_at", { ascending: true }),
   });
-  const users = useAdminData("profiles", {
-    filter: (q) => q.eq("role", "user"),
-  });
+  const [clientCount, setClientCount] = useState(0);
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "user")
+      .then(({ count }) => setClientCount(count ?? 0));
+  }, []);
   const [dialog, setDialog] = useState(null);
   const [queues, setQueues] = useState({ d: [], w: [] });
   useEffect(() => {
@@ -536,7 +541,6 @@ export function OverviewPage() {
             onClick={() => {
               dep.reload();
               wit.reload();
-              users.reload();
             }}
             style={button()}
           >
@@ -567,7 +571,7 @@ export function OverviewPage() {
         />
         <KPICard
           label="Client accounts"
-          value={users.data.length}
+          value={clientCount}
           sub="All registered profiles"
           icon={Users}
         />
@@ -807,20 +811,57 @@ export function UsersPage() {
   );
 }
 function ClientDrawer({ user, close }) {
-  const [wallets, setWallets] = useState([]),
-    [banks, setBanks] = useState([]);
+  const [wallets, setWallets] = useState([]);
+  const [kycStatus, setKycStatus] = useState(user.kyc_status ?? "Unverified");
+  const [acctStatus, setAcctStatus] = useState(
+    user.account_status ?? "Pending",
+  );
+  const [saving, setSaving] = useState("");
+  const [msg, setMsg] = useState({ text: "", ok: true });
+
   useEffect(() => {
     supabase
       .from("crypto_wallets")
-      .select("*")
+      .select("asset, network, wallet_address, label")
       .eq("user_id", user.id)
       .then(({ data }) => setWallets(data || []));
-    supabase
-      .from("bank_accounts")
-      .select("bank_name,account_name,account_number")
-      .eq("user_id", user.id)
-      .then(({ data }) => setBanks(data || []));
   }, [user.id]);
+
+  async function updateKyc() {
+    setSaving("kyc");
+    const { error } = await supabase.rpc("admin_update_kyc", {
+      p_user_id: user.id,
+      p_status: kycStatus,
+    });
+    setSaving("");
+    setMsg({ text: error ? error.message : "KYC status updated.", ok: !error });
+  }
+
+  async function updateAcctStatus() {
+    setSaving("acct");
+    const { error } = await supabase.rpc("admin_update_account_status", {
+      p_user_id: user.id,
+      p_status: acctStatus,
+    });
+    setSaving("");
+    setMsg({
+      text: error ? error.message : "Account status updated.",
+      ok: !error,
+    });
+  }
+
+  const selectStyle = {
+    background: "#0a101b",
+    border: "1px solid rgba(201,168,76,.2)",
+    borderRadius: 7,
+    padding: "8px 12px",
+    color: "#fff",
+    fontSize: 13,
+    outline: "none",
+    cursor: "pointer",
+    fontFamily: "DM Sans, sans-serif",
+  };
+
   return (
     <div
       style={{
@@ -834,7 +875,7 @@ function ClientDrawer({ user, close }) {
     >
       <aside
         style={{
-          width: "min(500px,100%)",
+          width: "min(520px,100%)",
           background: "#101828",
           padding: 24,
           overflow: "auto",
@@ -848,6 +889,7 @@ function ClientDrawer({ user, close }) {
             background: "none",
             border: 0,
             color: "#fff",
+            cursor: "pointer",
           }}
         >
           <X />
@@ -872,7 +914,10 @@ function ClientDrawer({ user, close }) {
         >
           {user.first_name} {user.last_name}
         </h2>
+
+        {/* Profile info */}
         <Record label="Account ID" value={user.account_id} />
+        <Record label="Email" value={user.email} />
         <Record label="Phone" value={user.phone} />
         <Record
           label="Address"
@@ -884,36 +929,144 @@ function ClientDrawer({ user, close }) {
           label="SSN last four"
           value={user.ssn_last4 ? `•••-••-${user.ssn_last4}` : "Not supplied"}
         />
-        <h3 style={{ color: "#fff", fontSize: 14, marginTop: 25 }}>
-          Withdrawal destinations
+
+        {/* Crypto withdrawal wallets */}
+        <h3
+          style={{
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 700,
+            marginTop: 24,
+            marginBottom: 10,
+            letterSpacing: 0.5,
+          }}
+        >
+          Crypto Withdrawal Wallets
         </h3>
-        {banks.map((b, i) => (
-          <Record
-            key={i}
-            label={b.bank_name}
-            value={`${b.account_name} ••••${b.account_number?.slice(-4)}`}
-          />
-        ))}
-        {wallets.map((w) => (
-          <Record
-            key={w.id}
-            label={`${w.network || "Crypto"} wallet`}
-            value={w.wallet_address}
-          />
-        ))}
-        {!banks.length && !wallets.length && (
+        {wallets.length === 0 ? (
           <div style={{ color: "#8290a2", fontSize: 13 }}>
-            No destination has been added.
+            No wallets saved.
           </div>
+        ) : (
+          wallets.map((w, i) => (
+            <Record
+              key={i}
+              label={`${w.asset} · ${w.network}`}
+              value={w.wallet_address}
+            />
+          ))
         )}
+
+        {/* KYC control */}
+        <h3
+          style={{
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 700,
+            marginTop: 24,
+            marginBottom: 10,
+            letterSpacing: 0.5,
+          }}
+        >
+          KYC Verification
+        </h3>
         <div
           style={{
-            marginTop: 25,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
+          <select
+            value={kycStatus}
+            onChange={(e) => setKycStatus(e.target.value)}
+            style={selectStyle}
+          >
+            {["Unverified", "Pending", "Verified", "Rejected"].map((s) => (
+              <option key={s} value={s} style={{ background: "#0F1422" }}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={updateKyc}
+            disabled={saving === "kyc"}
+            style={{ ...button(), padding: "8px 16px" }}
+          >
+            {saving === "kyc" ? "Saving…" : "Update"}
+          </button>
+        </div>
+
+        {/* Account status control */}
+        <h3
+          style={{
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 700,
+            marginTop: 20,
+            marginBottom: 10,
+            letterSpacing: 0.5,
+          }}
+        >
+          Account Status
+        </h3>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
+          <select
+            value={acctStatus}
+            onChange={(e) => setAcctStatus(e.target.value)}
+            style={selectStyle}
+          >
+            {["Pending", "Active", "Suspended", "Closed"].map((s) => (
+              <option key={s} value={s} style={{ background: "#0F1422" }}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={updateAcctStatus}
+            disabled={saving === "acct"}
+            style={{ ...button(), padding: "8px 16px" }}
+          >
+            {saving === "acct" ? "Saving…" : "Update"}
+          </button>
+        </div>
+
+        {/* Feedback */}
+        {msg.text && (
+          <div
+            style={{
+              fontSize: 12,
+              padding: "8px 12px",
+              borderRadius: 7,
+              marginTop: 8,
+              background: msg.ok
+                ? "rgba(74,222,128,.08)"
+                : "rgba(248,113,113,.08)",
+              border: `1px solid ${msg.ok ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`,
+              color: msg.ok ? "#4ade80" : "#fca5a5",
+            }}
+          >
+            {msg.text}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 24,
             padding: 12,
             background: "rgba(201,168,76,.08)",
             fontSize: 11,
             color: "#b7c2d0",
             lineHeight: 1.5,
+            borderRadius: 8,
           }}
         >
           <AlertTriangle
@@ -1545,6 +1698,743 @@ export function AdminAccountsPage() {
             </button>
           </form>
         </SectionCard>
+      </div>
+      <Responsive />
+    </>
+  );
+}
+
+export function InvestmentsPage() {
+  const {
+    data: raw,
+    loading,
+    error,
+    reload,
+  } = useAdminData("user_investments", {
+    select:
+      "*, investment_plans(name, tier, roi_percent, duration_hrs), profiles!user_id(first_name, last_name, account_id)",
+    filter: (q) => q.order("created_at", { ascending: false }),
+  });
+
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [dialog, setDialog] = useState(null); // { mode: 'activate'|'credit'|'mature', item }
+  const [creditAmount, setCreditAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const statuses = [
+    "All",
+    "Pending",
+    "Active",
+    "Maturing Soon",
+    "Matured",
+    "Cancelled",
+  ];
+  const statusTone = {
+    Active: "green",
+    "Maturing Soon": "amber",
+    Matured: "blue",
+    Pending: "grey",
+    Cancelled: "grey",
+  };
+
+  const shown = raw.filter(
+    (r) => statusFilter === "All" || r.status === statusFilter,
+  );
+
+  async function handleAction() {
+    setBusy(true);
+    setErr("");
+    let rpcError;
+
+    if (dialog.mode === "activate") {
+      const { error } = await supabase.rpc("admin_activate_investment", {
+        p_investment_id: dialog.item.id,
+      });
+      rpcError = error;
+    } else if (dialog.mode === "credit") {
+      const amt = parseFloat(creditAmount);
+      if (!amt || amt <= 0) {
+        setErr("Enter a valid amount.");
+        setBusy(false);
+        return;
+      }
+      const { error } = await supabase.rpc("admin_credit_returns", {
+        p_investment_id: dialog.item.id,
+        p_returns: amt,
+      });
+      rpcError = error;
+    } else if (dialog.mode === "mature") {
+      const { error } = await supabase.rpc("admin_mark_investment_matured", {
+        p_investment_id: dialog.item.id,
+      });
+      rpcError = error;
+    }
+
+    setBusy(false);
+    if (rpcError) {
+      setErr(rpcError.message);
+      return;
+    }
+    setDialog(null);
+    setCreditAmount("");
+    reload();
+  }
+
+  return (
+    <>
+      <Title
+        eyebrow="INVESTMENT MANAGEMENT"
+        title="Client investments"
+        action={
+          <button onClick={reload} style={button()}>
+            <RefreshCw size={13} /> Refresh
+          </button>
+        }
+      />
+
+      {/* Status filter */}
+      <div
+        style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}
+      >
+        {statuses.map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            style={{
+              padding: "7px 16px",
+              borderRadius: 100,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              border: "none",
+              transition: "all 0.2s",
+              background:
+                statusFilter === s
+                  ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
+                  : "rgba(255,255,255,.06)",
+              color: statusFilter === s ? "#0A0E1A" : "#D6DEE8",
+            }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      <SectionCard
+        title={`${shown.length} investment${shown.length !== 1 ? "s" : ""}`}
+      >
+        <State loading={loading} error={error} empty={!shown.length}>
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 13,
+              }}
+            >
+              <thead>
+                <tr>
+                  {[
+                    "Client",
+                    "Plan",
+                    "Invested",
+                    "Returns",
+                    "ROI %",
+                    "Status",
+                    "Started",
+                    "Matures",
+                    "Actions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        color: "#8290a2",
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        borderBottom: "1px solid rgba(201,168,76,.12)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    style={{ borderBottom: "1px solid rgba(255,255,255,.05)" }}
+                  >
+                    <td style={{ padding: 12, color: "#fff", fontWeight: 600 }}>
+                      {inv.profiles?.first_name} {inv.profiles?.last_name}
+                      <div style={{ color: "#8290a2", fontSize: 11 }}>
+                        {inv.profiles?.account_id}
+                      </div>
+                    </td>
+                    <td style={{ padding: 12, color: "#D6DEE8" }}>
+                      {inv.investment_plans?.name ?? "—"}
+                    </td>
+                    <td
+                      style={{ padding: 12, color: "#E8C86D", fontWeight: 700 }}
+                    >
+                      {money(inv.amount_invested)}
+                    </td>
+                    <td
+                      style={{ padding: 12, color: "#4ade80", fontWeight: 600 }}
+                    >
+                      {money(inv.returns_earned)}
+                    </td>
+                    <td style={{ padding: 12, color: "#D6DEE8" }}>
+                      {inv.investment_plans?.roi_percent ?? "—"}%
+                    </td>
+                    <td style={{ padding: 12 }}>
+                      <Badge
+                        label={inv.status}
+                        color={statusTone[inv.status] ?? "grey"}
+                      />
+                    </td>
+                    <td
+                      style={{
+                        padding: 12,
+                        color: "#a6b0bf",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {date(inv.started_at)}
+                    </td>
+                    <td
+                      style={{
+                        padding: 12,
+                        color: "#a6b0bf",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {date(inv.matures_at)}
+                    </td>
+                    <td style={{ padding: 12 }}>
+                      <div
+                        style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}
+                      >
+                        {inv.status === "Pending" && (
+                          <button
+                            onClick={() =>
+                              setDialog({ mode: "activate", item: inv })
+                            }
+                            style={button()}
+                          >
+                            Activate
+                          </button>
+                        )}
+                        {["Active", "Maturing Soon"].includes(inv.status) && (
+                          <button
+                            onClick={() =>
+                              setDialog({ mode: "credit", item: inv })
+                            }
+                            style={button()}
+                          >
+                            Credit Returns
+                          </button>
+                        )}
+                        {["Active", "Maturing Soon"].includes(inv.status) && (
+                          <button
+                            onClick={() =>
+                              setDialog({ mode: "mature", item: inv })
+                            }
+                            style={button("danger")}
+                          >
+                            Mark Matured
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </State>
+      </SectionCard>
+
+      {/* Action dialog */}
+      {dialog && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3,7,14,.8)",
+            zIndex: 80,
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+        >
+          <section
+            style={{
+              width: "min(520px,100%)",
+              background: "#121a2a",
+              border: "1px solid rgba(201,168,76,.28)",
+              borderRadius: 14,
+              boxShadow: "0 24px 80px #000",
+              padding: 28,
+            }}
+          >
+            <div
+              style={{
+                color: "#C9A84C",
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: 1.4,
+                marginBottom: 8,
+              }}
+            >
+              {dialog.mode === "activate"
+                ? "ACTIVATE INVESTMENT"
+                : dialog.mode === "credit"
+                  ? "CREDIT RETURNS"
+                  : "MARK AS MATURED"}
+            </div>
+            <h2
+              style={{
+                color: "#fff",
+                fontFamily: "Cormorant Garamond, serif",
+                fontSize: 26,
+                margin: "0 0 16px",
+              }}
+            >
+              {dialog.item.profiles?.first_name}{" "}
+              {dialog.item.profiles?.last_name} —{" "}
+              {dialog.item.investment_plans?.name}
+            </h2>
+            <div
+              style={{
+                fontSize: 13,
+                color: "#a6b0bf",
+                marginBottom: 20,
+                lineHeight: 1.7,
+              }}
+            >
+              Invested:{" "}
+              <strong style={{ color: "#E8C86D" }}>
+                {money(dialog.item.amount_invested)}
+              </strong>
+              {" · "}Current returns:{" "}
+              <strong style={{ color: "#4ade80" }}>
+                {money(dialog.item.returns_earned)}
+              </strong>
+            </div>
+
+            {dialog.mode === "credit" && (
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "#b7c2d0",
+                  display: "block",
+                  marginBottom: 16,
+                }}
+              >
+                Returns to credit ($)
+                <input
+                  type="number"
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(e.target.value)}
+                  placeholder="0.00"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    marginTop: 6,
+                    padding: "10px 14px",
+                    background: "#0b101b",
+                    color: "#fff",
+                    border: "1px solid rgba(201,168,76,.22)",
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontFamily: "DM Sans, sans-serif",
+                    outline: "none",
+                  }}
+                />
+              </label>
+            )}
+
+            {dialog.mode === "mature" && (
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "#fbbf24",
+                  background: "rgba(251,191,36,.07)",
+                  border: "1px solid rgba(251,191,36,.2)",
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  marginBottom: 16,
+                }}
+              >
+                This will mark the investment as Matured and notify the client.
+                Ensure all returns have already been credited before proceeding.
+              </p>
+            )}
+
+            {err && (
+              <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 12 }}>
+                {err}
+              </div>
+            )}
+
+            <div
+              style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}
+            >
+              <button
+                onClick={() => {
+                  setDialog(null);
+                  setErr("");
+                  setCreditAmount("");
+                }}
+                style={button("plain")}
+              >
+                Cancel
+              </button>
+              <button onClick={handleAction} disabled={busy} style={button()}>
+                {busy
+                  ? "Saving…"
+                  : dialog.mode === "activate"
+                    ? "Activate"
+                    : dialog.mode === "credit"
+                      ? "Credit Returns"
+                      : "Mark Matured"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <Responsive />
+    </>
+  );
+}
+
+export function AdminNotificationsPage() {
+  const [tab, setTab] = useState("broadcast");
+  const [form, setForm] = useState({
+    title: "",
+    message: "",
+    category: "Promotion",
+  });
+  const [userId, setUserId] = useState("");
+  const [directForm, setDirectForm] = useState({
+    title: "",
+    message: "",
+    category: "Account",
+  });
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const inputStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    marginTop: 5,
+    padding: "10px 12px",
+    background: "#0a101b",
+    border: "1px solid rgba(201,168,76,.2)",
+    borderRadius: 7,
+    color: "#fff",
+    fontFamily: "DM Sans, sans-serif",
+    fontSize: 13,
+    outline: "none",
+  };
+
+  async function handleBroadcast(e) {
+    e.preventDefault();
+    setSending(true);
+    setResult(null);
+    const { data, error } = await supabase.rpc("admin_broadcast_notification", {
+      p_title: form.title,
+      p_message: form.message,
+      p_category: form.category,
+    });
+    setSending(false);
+    if (error) setResult({ ok: false, text: error.message });
+    else {
+      setResult({
+        ok: true,
+        text: `Sent to ${data} active client${data !== 1 ? "s" : ""}.`,
+      });
+      setForm({ title: "", message: "", category: "Promotion" });
+    }
+  }
+
+  async function handleDirect(e) {
+    e.preventDefault();
+    if (!userId.trim()) {
+      setResult({ ok: false, text: "Enter a user ID." });
+      return;
+    }
+    setSending(true);
+    setResult(null);
+    const { error } = await supabase.from("notifications").insert({
+      user_id: userId.trim(),
+      title: directForm.title,
+      message: directForm.message,
+      category: directForm.category,
+    });
+    setSending(false);
+    if (error) setResult({ ok: false, text: error.message });
+    else {
+      setResult({ ok: true, text: "Notification sent." });
+      setDirectForm({ title: "", message: "", category: "Account" });
+      setUserId("");
+    }
+  }
+
+  const categories = [
+    "Account",
+    "Deposit",
+    "Withdrawal",
+    "Investment",
+    "Security",
+    "Document",
+    "Promotion",
+  ];
+
+  return (
+    <>
+      <Title eyebrow="COMMUNICATIONS" title="Send notifications" />
+
+      {/* Tabs */}
+      <div
+        style={{
+          display: "flex",
+          background: "rgba(255,255,255,.03)",
+          border: "1px solid rgba(201,168,76,.12)",
+          borderRadius: 12,
+          padding: 5,
+          marginBottom: 24,
+          width: "fit-content",
+        }}
+      >
+        {[
+          ["broadcast", "Broadcast to All"],
+          ["direct", "Send to User"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => {
+              setTab(id);
+              setResult(null);
+            }}
+            style={{
+              padding: "10px 22px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "DM Sans, sans-serif",
+              background:
+                tab === id
+                  ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
+                  : "transparent",
+              color: tab === id ? "#0A0E1A" : "#D6DEE8",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ maxWidth: 560 }}>
+        {tab === "broadcast" && (
+          <SectionCard title="Broadcast notification">
+            <p
+              style={{
+                fontSize: 12,
+                color: "#8290a2",
+                marginTop: 0,
+                marginBottom: 16,
+                lineHeight: 1.6,
+              }}
+            >
+              Sends to all clients whose account status is{" "}
+              <strong style={{ color: "#E8C86D" }}>Active</strong>. Use for
+              platform announcements, promotions, or service updates.
+            </p>
+            <form
+              onSubmit={handleBroadcast}
+              style={{ display: "grid", gap: 14 }}
+            >
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Title
+                <input
+                  required
+                  value={form.title}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, title: e.target.value }))
+                  }
+                  placeholder="e.g. Platform Maintenance"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Message
+                <textarea
+                  required
+                  value={form.message}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, message: e.target.value }))
+                  }
+                  placeholder="Enter your message…"
+                  rows={4}
+                  style={{ ...inputStyle, resize: "vertical", marginTop: 5 }}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Category
+                <select
+                  value={form.category}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, category: e.target.value }))
+                  }
+                  style={{ ...inputStyle, cursor: "pointer" }}
+                >
+                  {categories.map((c) => (
+                    <option key={c} value={c} style={{ background: "#0F1422" }}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {result && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    padding: "10px 12px",
+                    borderRadius: 7,
+                    background: result.ok
+                      ? "rgba(74,222,128,.08)"
+                      : "rgba(248,113,113,.08)",
+                    border: `1px solid ${result.ok ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`,
+                    color: result.ok ? "#4ade80" : "#fca5a5",
+                  }}
+                >
+                  {result.text}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={sending}
+                style={{
+                  ...button(),
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  justifyContent: "center",
+                }}
+              >
+                {sending ? "Sending…" : "📢 Send Broadcast"}
+              </button>
+            </form>
+          </SectionCard>
+        )}
+
+        {tab === "direct" && (
+          <SectionCard title="Send to specific user">
+            <p
+              style={{
+                fontSize: 12,
+                color: "#8290a2",
+                marginTop: 0,
+                marginBottom: 16,
+                lineHeight: 1.6,
+              }}
+            >
+              Sends a notification directly to one user. Paste their profile
+              UUID from the client directory.
+            </p>
+            <form onSubmit={handleDirect} style={{ display: "grid", gap: 14 }}>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                User ID (UUID)
+                <input
+                  required
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="e.g. 3f2a1b…"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Title
+                <input
+                  required
+                  value={directForm.title}
+                  onChange={(e) =>
+                    setDirectForm((p) => ({ ...p, title: e.target.value }))
+                  }
+                  placeholder="e.g. Your deposit has been approved"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Message
+                <textarea
+                  required
+                  value={directForm.message}
+                  onChange={(e) =>
+                    setDirectForm((p) => ({ ...p, message: e.target.value }))
+                  }
+                  placeholder="Enter your message…"
+                  rows={4}
+                  style={{ ...inputStyle, resize: "vertical", marginTop: 5 }}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#b7c2d0" }}>
+                Category
+                <select
+                  value={directForm.category}
+                  onChange={(e) =>
+                    setDirectForm((p) => ({ ...p, category: e.target.value }))
+                  }
+                  style={{ ...inputStyle, cursor: "pointer" }}
+                >
+                  {categories.map((c) => (
+                    <option key={c} value={c} style={{ background: "#0F1422" }}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {result && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    padding: "10px 12px",
+                    borderRadius: 7,
+                    background: result.ok
+                      ? "rgba(74,222,128,.08)"
+                      : "rgba(248,113,113,.08)",
+                    border: `1px solid ${result.ok ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`,
+                    color: result.ok ? "#4ade80" : "#fca5a5",
+                  }}
+                >
+                  {result.text}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={sending}
+                style={{
+                  ...button(),
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  justifyContent: "center",
+                }}
+              >
+                {sending ? "Sending…" : "✉️ Send Notification"}
+              </button>
+            </form>
+          </SectionCard>
+        )}
       </div>
       <Responsive />
     </>

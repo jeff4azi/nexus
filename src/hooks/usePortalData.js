@@ -236,7 +236,7 @@ export function useWithdrawals() {
     supabase
       .from("withdrawal_requests")
       .select(
-        "*, bank_accounts(bank_name, account_number), transactions(reference)",
+        "*, crypto_wallets(asset, network, wallet_address), transactions(reference)",
       )
       .eq("user_id", session.user.id)
       .order("created_at", { ascending: false })

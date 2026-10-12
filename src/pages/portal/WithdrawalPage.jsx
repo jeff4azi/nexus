@@ -7,14 +7,11 @@ import {
   GoldButton,
   PageHeader,
 } from "../../components/portal/PortalUI";
-import {
-  useBankAccounts,
-  useWithdrawals,
-  useUserInvestments,
-} from "../../hooks/usePortalData";
+import { useCryptoWallets, useWithdrawals } from "../../hooks/usePortalData";
+import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
 
-const quickAmounts = [500, 1000, 5000];
-const MIN = 100;
+const MIN = 10;
 
 const fmt = (n) =>
   "$" +
@@ -22,6 +19,7 @@ const fmt = (n) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
@@ -30,60 +28,84 @@ const fmtDate = (d) =>
         year: "numeric",
       })
     : "—";
+
 const statusColor = {
-  Completed: "green",
   Pending: "amber",
   Approved: "blue",
   Processing: "blue",
+  Paid: "green",
   Rejected: "red",
+  Cancelled: "grey",
 };
 
 export default function WithdrawalPage() {
-  const { accounts } = useBankAccounts();
+  const { profile } = useAuth();
+  const { wallets, loading: walletsLoading } = useCryptoWallets();
   const { withdrawals, loading: wLoading } = useWithdrawals();
-  const { investments } = useUserInvestments();
 
-  // Available balance = sum of returns earned from active investments
-  const available = investments.reduce(
-    (s, i) => s + Number(i.returns_earned ?? 0),
-    0,
-  );
+  // Balance comes from profile.balance — set atomically by admin_review_deposit
+  const available = Number(profile?.balance ?? 0);
+
+  // Pending withdrawals already deducted from balance, but show for info
+  const pendingTotal = withdrawals
+    .filter((w) => ["Pending", "Approved", "Processing"].includes(w.status))
+    .reduce((s, w) => s + Number(w.amount), 0);
 
   const [step, setStep] = useState(1);
   const [amount, setAmount] = useState("");
-  const [account, setAccount] = useState(null);
+  const [walletId, setWalletId] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [pin, setPin] = useState(["", "", "", ""]);
-  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [successData, setSuccessData] = useState(null);
 
   const numAmount = parseFloat(amount) || 0;
-  const selectedAccount = accounts.find((a) => a.id === account) ?? accounts[0];
+  const selectedWallet = wallets.find((w) => w.id === walletId) ?? wallets[0];
 
   function handleAmountNext() {
     if (numAmount < MIN) {
-      setError(`Minimum withdrawal is $${MIN}`);
+      setError(`Minimum withdrawal is ${fmt(MIN)}`);
       return;
     }
     if (numAmount > available) {
-      setError("Amount exceeds available balance");
+      setError(`Amount exceeds available balance of ${fmt(available)}`);
       return;
     }
     setError("");
     setStep(2);
   }
 
-  function handlePinInput(val, i) {
-    const next = [...pin];
-    next[i] = val.slice(-1);
-    setPin(next);
-    if (val && i < 3) document.getElementById(`pin-${i + 1}`)?.focus();
-    if (next.every((d) => d !== "") && i === 3) {
-      setTimeout(() => setSuccess(true), 400);
+  function handleWalletNext() {
+    if (!walletId && wallets.length > 0) setWalletId(wallets[0].id);
+    if (wallets.length === 0) {
+      setError("Add a crypto wallet in Settings first.");
+      return;
     }
+    setError("");
+    setStep(3);
   }
 
-  if (success)
+  async function handleSubmit() {
+    if (!confirmed) return;
+    setSubmitting(true);
+    setError("");
+
+    const { data, error: rpcError } = await supabase.rpc("submit_withdrawal", {
+      p_amount: numAmount,
+      p_crypto_wallet_id: walletId ?? wallets[0]?.id,
+    });
+
+    setSubmitting(false);
+
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+
+    setSuccessData(data);
+  }
+
+  if (successData)
     return (
       <div
         style={{
@@ -122,7 +144,7 @@ export default function WithdrawalPage() {
               marginBottom: 12,
             }}
           >
-            Withdrawal Request Submitted!
+            Withdrawal Submitted
           </h2>
           <p
             style={{
@@ -134,10 +156,8 @@ export default function WithdrawalPage() {
             }}
           >
             Your withdrawal of{" "}
-            <strong style={{ color: "#C9A84C" }}>
-              ${numAmount.toLocaleString()}
-            </strong>{" "}
-            is being processed.
+            <strong style={{ color: "#C9A84C" }}>{fmt(numAmount)}</strong> is
+            pending admin approval.
           </p>
           <p
             style={{
@@ -147,7 +167,7 @@ export default function WithdrawalPage() {
               marginBottom: 8,
             }}
           >
-            Estimated arrival: 1–3 business days
+            Estimated processing: 1–3 business days
           </p>
           <p
             style={{
@@ -157,7 +177,7 @@ export default function WithdrawalPage() {
               marginBottom: 32,
             }}
           >
-            Ref: NYG-WDR-{Date.now().toString().slice(-6)}
+            Ref: {successData.id?.slice(0, 8).toUpperCase()}
           </p>
           <div
             style={{
@@ -168,9 +188,7 @@ export default function WithdrawalPage() {
             }}
           >
             <a href="/portal/transactions">
-              <GoldButton variant="outline">
-                View Transaction History
-              </GoldButton>
+              <GoldButton variant="outline">View Transactions</GoldButton>
             </a>
             <a href="/portal/dashboard">
               <GoldButton>Return to Dashboard</GoldButton>
@@ -184,10 +202,9 @@ export default function WithdrawalPage() {
     <div>
       <PageHeader
         title="Request a Withdrawal"
-        subtitle="Withdraw funds from your available balance to your linked bank account."
+        subtitle="Withdraw funds to your saved crypto wallet. Funds are reserved immediately on submission."
       />
 
-      {/* Info notice */}
       <div
         style={{
           display: "flex",
@@ -205,7 +222,8 @@ export default function WithdrawalPage() {
           style={{ flexShrink: 0, marginTop: 1 }}
         />
         <span style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.8 }}>
-          Withdrawals are processed within 1–3 business days.
+          Withdrawals are processed within 1–3 business days after admin
+          approval. Your balance is reserved immediately when you submit.
         </span>
       </div>
 
@@ -221,7 +239,7 @@ export default function WithdrawalPage() {
         <div>
           {/* Step indicator */}
           <div style={{ display: "flex", gap: 0, marginBottom: 28 }}>
-            {["Enter Amount", "Select Destination", "Review & Confirm"].map(
+            {["Enter Amount", "Select Wallet", "Review & Confirm"].map(
               (s, i) => {
                 const active = step === i + 1,
                   done = step > i + 1;
@@ -295,7 +313,7 @@ export default function WithdrawalPage() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Step 1 */}
+            {/* Step 1 — Amount */}
             {step === 1 && (
               <motion.div
                 key="s1"
@@ -361,15 +379,6 @@ export default function WithdrawalPage() {
                             outline: "none",
                             fontFamily: "DM Sans, sans-serif",
                           }}
-                          onFocus={(e) =>
-                            (e.target.style.borderColor =
-                              "rgba(201,168,76,0.55)")
-                          }
-                          onBlur={(e) =>
-                            (e.target.style.borderColor = error
-                              ? "rgba(248,113,113,0.5)"
-                              : "rgba(201,168,76,0.2)")
-                          }
                         />
                       </div>
                       {error && (
@@ -391,37 +400,39 @@ export default function WithdrawalPage() {
                           margin: "8px 0 0",
                         }}
                       >
-                        Min: $100 · Max: {fmt(available)}
+                        Min: {fmt(MIN)} · Available: {fmt(available)}
                       </p>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {[...quickAmounts, available].map((q, i) => (
-                        <button
-                          key={i}
-                          onClick={() => {
-                            setAmount(String(q));
-                            setError("");
-                          }}
-                          style={{
-                            padding: "8px 16px",
-                            borderRadius: 8,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            border: "1px solid rgba(201,168,76,0.25)",
-                            background:
-                              amount == q
-                                ? "rgba(201,168,76,0.15)"
-                                : "rgba(255,255,255,0.04)",
-                            color: amount == q ? "#C9A84C" : "#D6DEE8",
-                            transition: "all 0.2s",
-                          }}
-                        >
-                          {i === quickAmounts.length
-                            ? "Max"
-                            : `$${q.toLocaleString()}`}
-                        </button>
-                      ))}
+                      {[100, 500, 1000, available].map(
+                        (q, i) =>
+                          q > 0 && (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                setAmount(String(q));
+                                setError("");
+                              }}
+                              style={{
+                                padding: "8px 16px",
+                                borderRadius: 8,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                border: "1px solid rgba(201,168,76,0.25)",
+                                background:
+                                  Number(amount) === q
+                                    ? "rgba(201,168,76,0.15)"
+                                    : "rgba(255,255,255,0.04)",
+                                color:
+                                  Number(amount) === q ? "#C9A84C" : "#D6DEE8",
+                                transition: "all 0.2s",
+                              }}
+                            >
+                              {i === 3 ? "Max" : `$${q.toLocaleString()}`}
+                            </button>
+                          ),
+                      )}
                     </div>
                     <GoldButton
                       onClick={handleAmountNext}
@@ -434,7 +445,7 @@ export default function WithdrawalPage() {
               </motion.div>
             )}
 
-            {/* Step 2 */}
+            {/* Step 2 — Wallet */}
             {step === 2 && (
               <motion.div
                 key="s2"
@@ -442,7 +453,7 @@ export default function WithdrawalPage() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <SectionCard title="Select Destination">
+                <SectionCard title="Select Destination Wallet">
                   <div
                     style={{
                       display: "flex",
@@ -451,23 +462,43 @@ export default function WithdrawalPage() {
                       marginBottom: 20,
                     }}
                   >
-                    {accounts.length === 0 ? (
+                    {walletsLoading ? (
                       <p
-                        style={{
-                          fontSize: 13,
-                          color: "#D6DEE8",
-                          opacity: 0.5,
-                          textAlign: "center",
-                          padding: "20px 0",
-                        }}
+                        style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.5 }}
                       >
-                        No bank accounts saved. Add one in Settings first.
+                        Loading wallets…
                       </p>
+                    ) : wallets.length === 0 ? (
+                      <div>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            color: "#D6DEE8",
+                            opacity: 0.5,
+                            textAlign: "center",
+                            padding: "20px 0",
+                          }}
+                        >
+                          No crypto wallets saved.
+                        </p>
+                        <a
+                          href="/portal/settings"
+                          style={{
+                            display: "block",
+                            textAlign: "center",
+                            color: "#C9A84C",
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          Add a wallet in Settings →
+                        </a>
+                      </div>
                     ) : (
-                      accounts.map((acc) => (
+                      wallets.map((w) => (
                         <button
-                          key={acc.id}
-                          onClick={() => setAccount(acc.id)}
+                          key={w.id}
+                          onClick={() => setWalletId(w.id)}
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
@@ -475,15 +506,16 @@ export default function WithdrawalPage() {
                             padding: "16px 18px",
                             borderRadius: 12,
                             cursor: "pointer",
-                            border: `1px solid ${account === acc.id ? "rgba(201,168,76,0.5)" : "rgba(201,168,76,0.12)"}`,
+                            border: `1px solid ${walletId === w.id ? "rgba(201,168,76,0.5)" : "rgba(201,168,76,0.12)"}`,
                             background:
-                              account === acc.id
+                              walletId === w.id
                                 ? "rgba(201,168,76,0.08)"
                                 : "rgba(255,255,255,0.02)",
                             transition: "all 0.2s",
+                            textAlign: "left",
                           }}
                         >
-                          <div style={{ textAlign: "left" }}>
+                          <div>
                             <div
                               style={{
                                 fontSize: 14,
@@ -492,7 +524,7 @@ export default function WithdrawalPage() {
                                 marginBottom: 4,
                               }}
                             >
-                              {acc.bank_name} ****{acc.account_number.slice(-4)}
+                              {w.label || `${w.asset} wallet`}
                             </div>
                             <div
                               style={{
@@ -501,42 +533,50 @@ export default function WithdrawalPage() {
                                 opacity: 0.6,
                               }}
                             >
-                              {acc.account_name} · {acc.account_type}
+                              {w.asset} · {w.network}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#C9A84C",
+                                fontFamily: "monospace",
+                                marginTop: 4,
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {w.wallet_address.slice(0, 20)}…
+                              {w.wallet_address.slice(-8)}
                             </div>
                           </div>
                           <div
                             style={{
-                              display: "flex",
-                              gap: 8,
-                              alignItems: "center",
+                              width: 18,
+                              height: 18,
+                              borderRadius: "50%",
+                              border: `2px solid ${walletId === w.id ? "#C9A84C" : "rgba(255,255,255,0.2)"}`,
+                              background:
+                                walletId === w.id ? "#C9A84C" : "transparent",
+                              flexShrink: 0,
+                              transition: "all 0.2s",
                             }}
-                          >
-                            {acc.is_default && (
-                              <Badge label="Default" color="gold" />
-                            )}
-                            <div
-                              style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: "50%",
-                                border: `2px solid ${account === acc.id ? "#C9A84C" : "rgba(255,255,255,0.2)"}`,
-                                background:
-                                  account === acc.id
-                                    ? "#C9A84C"
-                                    : "transparent",
-                                transition: "all 0.2s",
-                              }}
-                            />
-                          </div>
+                          />
                         </button>
                       ))
+                    )}
+                    {error && (
+                      <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>
+                        {error}
+                      </p>
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 10 }}>
                     <GoldButton variant="outline" onClick={() => setStep(1)}>
                       ← Back
                     </GoldButton>
-                    <GoldButton onClick={() => setStep(3)}>
+                    <GoldButton
+                      onClick={handleWalletNext}
+                      disabled={wallets.length === 0}
+                    >
                       Continue →
                     </GoldButton>
                   </div>
@@ -544,7 +584,7 @@ export default function WithdrawalPage() {
               </motion.div>
             )}
 
-            {/* Step 3 */}
+            {/* Step 3 — Review */}
             {step === 3 && (
               <motion.div
                 key="s3"
@@ -563,19 +603,22 @@ export default function WithdrawalPage() {
                     }}
                   >
                     {[
-                      ["Withdrawal Amount", `$${numAmount.toLocaleString()}`],
+                      ["Withdrawal Amount", fmt(numAmount)],
                       ["Processing Fee", "$0.00"],
+                      ["Amount You'll Receive", fmt(numAmount)],
                       [
-                        "Amount You'll Receive",
-                        `$${numAmount.toLocaleString()}`,
-                      ],
-                      [
-                        "Destination",
-                        selectedAccount
-                          ? `${selectedAccount.bank_name} ****${selectedAccount.account_number.slice(-4)}`
+                        "Asset",
+                        selectedWallet
+                          ? `${selectedWallet.asset} (${selectedWallet.network})`
                           : "—",
                       ],
-                      ["Estimated Arrival", "1–3 business days"],
+                      [
+                        "Destination Wallet",
+                        selectedWallet
+                          ? `${selectedWallet.wallet_address.slice(0, 16)}…`
+                          : "—",
+                      ],
+                      ["Estimated Processing", "1–3 business days"],
                     ].map(([l, v]) => (
                       <div
                         key={l}
@@ -600,12 +643,39 @@ export default function WithdrawalPage() {
                             fontSize: 13,
                             color: "#fff",
                             fontWeight: 600,
+                            textAlign: "right",
+                            maxWidth: "55%",
                           }}
                         >
                           {v}
                         </span>
                       </div>
                     ))}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      padding: "14px 16px",
+                      background: "rgba(251,191,36,0.06)",
+                      border: "1px solid rgba(251,191,36,0.18)",
+                      borderRadius: 10,
+                      marginBottom: 20,
+                    }}
+                  >
+                    <AlertCircle
+                      size={15}
+                      color="#fbbf24"
+                      style={{ flexShrink: 0, marginTop: 1 }}
+                    />
+                    <span
+                      style={{ fontSize: 12, color: "#D6DEE8", opacity: 0.75 }}
+                    >
+                      Your balance will be reduced by {fmt(numAmount)}{" "}
+                      immediately. If this request is rejected, your funds will
+                      be fully restored.
+                    </span>
                   </div>
 
                   <div
@@ -656,66 +726,44 @@ export default function WithdrawalPage() {
                         lineHeight: 1.6,
                       }}
                     >
-                      I confirm this withdrawal request is correct.
+                      I confirm this withdrawal request is correct and I
+                      authorise the transfer.
                     </span>
                   </div>
 
-                  {/* PIN */}
-                  <div style={{ marginBottom: 24 }}>
-                    <p
+                  {error && (
+                    <div
                       style={{
+                        display: "flex",
+                        gap: 8,
+                        padding: "12px 14px",
+                        background: "rgba(248,113,113,0.08)",
+                        border: "1px solid rgba(248,113,113,0.2)",
+                        borderRadius: 8,
+                        color: "#f87171",
                         fontSize: 13,
-                        color: "#D6DEE8",
-                        opacity: 0.7,
-                        marginBottom: 12,
+                        marginBottom: 16,
                       }}
                     >
-                      Enter your 4-digit transaction PIN to confirm:
-                    </p>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      {pin.map((d, i) => (
-                        <input
-                          key={i}
-                          id={`pin-${i}`}
-                          type="password"
-                          maxLength={1}
-                          value={d}
-                          onChange={(e) => handlePinInput(e.target.value, i)}
-                          style={{
-                            width: 52,
-                            height: 52,
-                            textAlign: "center",
-                            fontSize: 20,
-                            fontWeight: 700,
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(201,168,76,0.25)",
-                            borderRadius: 10,
-                            color: "#fff",
-                            outline: "none",
-                            fontFamily: "DM Sans, sans-serif",
-                          }}
-                          onFocus={(e) =>
-                            (e.target.style.borderColor =
-                              "rgba(201,168,76,0.6)")
-                          }
-                          onBlur={(e) =>
-                            (e.target.style.borderColor =
-                              "rgba(201,168,76,0.25)")
-                          }
-                        />
-                      ))}
+                      <AlertCircle
+                        size={15}
+                        style={{ flexShrink: 0, marginTop: 1 }}
+                      />
+                      {error}
                     </div>
-                  </div>
+                  )}
 
                   <div style={{ display: "flex", gap: 10 }}>
                     <GoldButton variant="outline" onClick={() => setStep(2)}>
                       ← Back
                     </GoldButton>
                     <GoldButton
-                      onClick={() => setSuccess(true)}
-                      style={{ opacity: confirmed ? 1 : 0.5 }}
+                      onClick={handleSubmit}
+                      disabled={!confirmed || submitting}
+                      style={{ opacity: !confirmed || submitting ? 0.5 : 1 }}
                     >
-                      <ArrowUpFromLine size={15} /> Submit Withdrawal
+                      <ArrowUpFromLine size={15} />
+                      {submitting ? "Submitting…" : "Submit Withdrawal"}
                     </GoldButton>
                   </div>
                 </SectionCard>
@@ -724,7 +772,7 @@ export default function WithdrawalPage() {
           </AnimatePresence>
         </div>
 
-        {/* Balance card */}
+        {/* Sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div
             style={{
@@ -757,16 +805,18 @@ export default function WithdrawalPage() {
             >
               {fmt(available)}
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#D6DEE8",
-                opacity: 0.5,
-                marginBottom: 4,
-              }}
-            >
-              Pending Withdrawals: $0.00
-            </div>
+            {pendingTotal > 0 && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#fbbf24",
+                  opacity: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                Pending withdrawals: {fmt(pendingTotal)}
+              </div>
+            )}
             <div
               style={{
                 fontSize: 11,
@@ -775,18 +825,18 @@ export default function WithdrawalPage() {
                 lineHeight: 1.6,
               }}
             >
-              Only matured returns and uninvested funds are available for
-              withdrawal.
+              Balance reflects approved deposits minus any active withdrawals.
             </div>
           </div>
 
           <SectionCard title="Policy">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                "Minimum withdrawal: $100",
-                "Processing time: 1–3 business days",
+                "Minimum withdrawal: $10",
+                "Processing: 1–3 business days",
                 "No withdrawal fees",
-                "Daily limit: $50,000",
+                "Funds reserved on submission",
+                "Balance restored if rejected",
               ].map((p, i) => (
                 <div
                   key={i}
@@ -819,32 +869,30 @@ export default function WithdrawalPage() {
           >
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(201,168,76,0.1)" }}>
-                {["Date", "Amount", "Destination", "Status", "Reference"].map(
-                  (c) => (
-                    <th
-                      key={c}
-                      style={{
-                        padding: "10px 14px",
-                        textAlign: "left",
-                        color: "#D6DEE8",
-                        opacity: 0.5,
-                        fontWeight: 600,
-                        fontSize: 11,
-                        letterSpacing: 1,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {c}
-                    </th>
-                  ),
-                )}
+                {["Date", "Amount", "Wallet", "Status"].map((c) => (
+                  <th
+                    key={c}
+                    style={{
+                      padding: "10px 14px",
+                      textAlign: "left",
+                      color: "#D6DEE8",
+                      opacity: 0.5,
+                      fontWeight: 600,
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {c}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {wLoading ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     style={{
                       padding: "24px",
                       textAlign: "center",
@@ -859,7 +907,7 @@ export default function WithdrawalPage() {
               ) : withdrawals.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     style={{
                       padding: "24px",
                       textAlign: "center",
@@ -893,11 +941,12 @@ export default function WithdrawalPage() {
                       style={{
                         padding: "13px 14px",
                         color: "#D6DEE8",
-                        opacity: 0.8,
+                        opacity: 0.7,
+                        fontSize: 12,
                       }}
                     >
-                      {w.bank_accounts
-                        ? `${w.bank_accounts.bank_name} ****${w.bank_accounts.account_number.slice(-4)}`
+                      {w.crypto_wallets
+                        ? `${w.crypto_wallets.asset} · ${w.crypto_wallets.wallet_address.slice(0, 10)}…`
                         : "—"}
                     </td>
                     <td style={{ padding: "13px 14px" }}>
@@ -905,16 +954,6 @@ export default function WithdrawalPage() {
                         label={w.status}
                         color={statusColor[w.status] ?? "grey"}
                       />
-                    </td>
-                    <td
-                      style={{
-                        padding: "13px 14px",
-                        color: "#C9A84C",
-                        fontFamily: "monospace",
-                        fontSize: 12,
-                      }}
-                    >
-                      {w.transactions?.reference ?? "—"}
                     </td>
                   </tr>
                 ))

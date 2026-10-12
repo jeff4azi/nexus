@@ -9,128 +9,7 @@ import {
   PageHeader,
 } from "../../components/portal/PortalUI";
 
-const mockTx = [
-  {
-    id: "TXN-001",
-    date: "Apr 19, 2026 10:30 AM",
-    type: "Deposit",
-    desc: "Bank Transfer Deposit",
-    amount: "+$5,000.00",
-    fee: "$0.00",
-    net: "+$5,000.00",
-    status: "Completed",
-    method: "Bank Transfer",
-    ref: "NYG-DEP-0419",
-  },
-  {
-    id: "TXN-002",
-    date: "Apr 17, 2026 4:00 PM",
-    type: "Withdrawal",
-    desc: "Withdrawal to GTBank ****4521",
-    amount: "-$1,200.00",
-    fee: "$0.00",
-    net: "-$1,200.00",
-    status: "Completed",
-    method: "Bank Transfer",
-    ref: "NYG-WDR-0417",
-  },
-  {
-    id: "TXN-003",
-    date: "Apr 15, 2026 9:00 AM",
-    type: "Return Credit",
-    desc: "Fixed Income Plan Returns",
-    amount: "+$320.00",
-    fee: "$0.00",
-    net: "+$320.00",
-    status: "Completed",
-    method: "Internal",
-    ref: "NYG-RET-0415",
-  },
-  {
-    id: "TXN-004",
-    date: "Apr 10, 2026 2:15 PM",
-    type: "Deposit",
-    desc: "Crypto USDT Deposit",
-    amount: "+$3,000.00",
-    fee: "$0.00",
-    net: "+$3,000.00",
-    status: "Completed",
-    method: "USDT (TRC-20)",
-    ref: "NYG-DEP-0410",
-  },
-  {
-    id: "TXN-005",
-    date: "Apr 8, 2026 11:00 AM",
-    type: "Fee",
-    desc: "Platform Service Fee",
-    amount: "-$15.00",
-    fee: "$0.00",
-    net: "-$15.00",
-    status: "Completed",
-    method: "Internal",
-    ref: "NYG-FEE-0408",
-  },
-  {
-    id: "TXN-006",
-    date: "Apr 1, 2026 8:00 AM",
-    type: "Deposit",
-    desc: "Bank Transfer Deposit",
-    amount: "+$10,000.00",
-    fee: "$0.00",
-    net: "+$10,000.00",
-    status: "Completed",
-    method: "Bank Transfer",
-    ref: "NYG-DEP-0401",
-  },
-  {
-    id: "TXN-007",
-    date: "Mar 28, 2026 3:30 PM",
-    type: "Withdrawal",
-    desc: "Withdrawal to GTBank ****4521",
-    amount: "-$2,000.00",
-    fee: "$0.00",
-    net: "-$2,000.00",
-    status: "Completed",
-    method: "Bank Transfer",
-    ref: "NYG-WDR-0328",
-  },
-  {
-    id: "TXN-008",
-    date: "Mar 20, 2026 10:00 AM",
-    type: "Return Credit",
-    desc: "Growth Plan – Gold Returns",
-    amount: "+$750.00",
-    fee: "$0.00",
-    net: "+$750.00",
-    status: "Completed",
-    method: "Internal",
-    ref: "NYG-RET-0320",
-  },
-  {
-    id: "TXN-009",
-    date: "Mar 15, 2026 1:00 PM",
-    type: "Bonus",
-    desc: "Referral Bonus",
-    amount: "+$50.00",
-    fee: "$0.00",
-    net: "+$50.00",
-    status: "Completed",
-    method: "Internal",
-    ref: "NYG-BON-0315",
-  },
-  {
-    id: "TXN-010",
-    date: "Mar 5, 2026 9:45 AM",
-    type: "Deposit",
-    desc: "Card Payment",
-    amount: "+$2,000.00",
-    fee: "$0.00",
-    net: "+$2,000.00",
-    status: "Pending",
-    method: "Debit Card",
-    ref: "NYG-DEP-0305",
-  },
-];
+// mockTx removed — all data comes from the DB via useTransactions()
 
 const fmt = (n) =>
   "$" +
@@ -167,6 +46,8 @@ const statusColor = {
 };
 
 function ReceiptModal({ tx, onClose }) {
+  const raw = tx._raw;
+  const sign = typeSign(raw.type);
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -233,15 +114,14 @@ function ReceiptModal({ tx, onClose }) {
           </button>
         </div>
         {[
-          ["Transaction ID", tx.id],
-          ["Date & Time", tx.date],
-          ["Type", tx.type],
-          ["Description", tx.desc],
-          ["Amount", tx.amount],
-          ["Fee", tx.fee],
-          ["Net Amount", tx.net],
-          ["Payment Method", tx.method],
-          ["Reference", tx.ref],
+          ["Transaction ID", raw.reference],
+          ["Date & Time", fmtDate(raw.created_at)],
+          ["Type", raw.type],
+          ["Description", raw.description ?? raw.type],
+          ["Amount", `${sign}${fmt(raw.amount)}`],
+          ["Fee", fmt(raw.fee ?? 0)],
+          ["Net Amount", `${sign}${fmt(raw.net_amount)}`],
+          ["Payment Method", raw.payment_method ?? "—"],
         ].map(([label, val]) => (
           <div
             key={label}
@@ -258,7 +138,12 @@ function ReceiptModal({ tx, onClose }) {
             <span
               style={{
                 fontSize: 13,
-                color: "#fff",
+                color:
+                  label === "Amount" || label === "Net Amount"
+                    ? sign === "+"
+                      ? "#4ade80"
+                      : "#f87171"
+                    : "#fff",
                 fontWeight: 500,
                 textAlign: "right",
                 maxWidth: "60%",
@@ -280,7 +165,7 @@ function ReceiptModal({ tx, onClose }) {
           <span style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.55 }}>
             Status
           </span>
-          <Badge label={tx.status} color={statusColor[tx.status] ?? "grey"} />
+          <Badge label={raw.status} color={statusColor[raw.status] ?? "grey"} />
         </div>
         <div style={{ marginTop: 24 }}>
           <GoldButton style={{ width: "100%", justifyContent: "center" }}>
@@ -301,10 +186,23 @@ export default function TransactionsPage() {
   const [page, setPage] = useState(1);
   const [receipt, setReceipt] = useState(null);
 
-  // Map raw DB rows to display shape
+  // Summary totals computed from raw numeric DB values — never from formatted strings
+  const totalDeposits = rawTx
+    .filter((t) => t.type === "Deposit" && t.status === "Completed")
+    .reduce((s, t) => s + Number(t.net_amount), 0);
+  const totalWithdrawals = rawTx
+    .filter((t) => t.type === "Withdrawal" && t.status === "Completed")
+    .reduce((s, t) => s + Number(t.net_amount), 0);
+  const totalReturns = rawTx
+    .filter((t) => t.type === "Return Credit" && t.status === "Completed")
+    .reduce((s, t) => s + Number(t.net_amount), 0);
+
+  // Map raw DB rows to display shape (only used for the table, not for calculations)
   const allTx = rawTx.map((tx) => {
     const sign = typeSign(tx.type);
     return {
+      // keep the raw row so receipt modal can read real values
+      _raw: tx,
       id: tx.reference,
       date: fmtDate(tx.created_at),
       type: tx.type,
@@ -341,16 +239,6 @@ export default function TransactionsPage() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const totalDeposits = allTx
-    .filter((t) => t.type === "Deposit" && t.status === "Completed")
-    .reduce((s, t) => s + parseFloat(t.amount.replace(/[^0-9.]/g, "")), 0);
-  const totalWithdrawals = allTx
-    .filter((t) => t.type === "Withdrawal" && t.status === "Completed")
-    .reduce((s, t) => s + parseFloat(t.amount.replace(/[^0-9.]/g, "")), 0);
-  const totalReturns = allTx
-    .filter((t) => t.type === "Return Credit" && t.status === "Completed")
-    .reduce((s, t) => s + parseFloat(t.amount.replace(/[^0-9.]/g, "")), 0);
-
   return (
     <div>
       <PageHeader
@@ -370,22 +258,22 @@ export default function TransactionsPage() {
         {[
           {
             label: "Total Deposits",
-            value: `$${totalDeposits.toLocaleString()}`,
+            value: fmt(totalDeposits),
             color: "#4ade80",
           },
           {
             label: "Total Withdrawals",
-            value: `$${totalWithdrawals.toLocaleString()}`,
+            value: fmt(totalWithdrawals),
             color: "#f87171",
           },
           {
             label: "Total Returns Credited",
-            value: `$${totalReturns.toLocaleString()}`,
+            value: fmt(totalReturns),
             color: "#60a5fa",
           },
           {
             label: "Net Balance Change",
-            value: `+$${(totalDeposits + totalReturns - totalWithdrawals).toLocaleString()}`,
+            value: fmt(totalDeposits + totalReturns - totalWithdrawals),
             color: "#C9A84C",
           },
         ].map((s, i) => (

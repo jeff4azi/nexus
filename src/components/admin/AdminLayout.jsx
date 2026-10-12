@@ -8,6 +8,8 @@ import {
   WalletCards,
   ShieldCheck,
   UserCog,
+  TrendingUp,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -25,9 +27,11 @@ export default function AdminLayout({ children }) {
   const baseItems = [
     ["Overview", "/admin", LayoutDashboard],
     ["Client directory", "/admin/users", Users],
+    ["Investments", "/admin/investments", TrendingUp],
     ["Deposit review", "/admin/deposits", Landmark],
     ["Payment approvals", "/admin/withdrawals", Send],
     ["Funding destinations", "/admin/funding", WalletCards],
+    ["Notifications", "/admin/notifications", Bell],
   ];
   const superItems = [["Admin accounts", "/admin/accounts", UserCog]];
   const items = isSuperAdmin ? [...baseItems, ...superItems] : baseItems;
