@@ -28,10 +28,17 @@ function Spinner() {
 }
 
 export default function ProtectedRoute({ children }) {
-  const { ready, isAuthenticated } = useAuth();
+  const { ready, isAuthenticated, session } = useAuth();
 
   if (!ready) return <Spinner />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  // Guard against unconfirmed accounts: Supabase can return a live session
+  // immediately after signUp if email confirmation is disabled in the project
+  // settings. We treat those sessions as unauthenticated so users cannot
+  // access the portal until their email is confirmed.
+  if (!isAuthenticated || !session?.user?.email_confirmed_at) {
+    return <Navigate to="/login" replace />;
+  }
 
   return children;
 }

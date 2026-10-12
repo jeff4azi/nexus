@@ -14,7 +14,10 @@ export function AuthProvider({ children }) {
     // Get the current session immediately on mount
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s ?? null);
-      if (s?.user) {
+      // Only load profile for confirmed users — unconfirmed signups return a
+      // session immediately when email confirmation is disabled; we guard here
+      // so the rest of the app never sees them as authenticated.
+      if (s?.user && s.user.email_confirmed_at) {
         loadProfile(s.user.id);
       }
     });
@@ -22,13 +25,16 @@ export function AuthProvider({ children }) {
     // Listen for auth changes (sign in, sign out, token refresh)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s ?? null);
-      if (s?.user) {
+      if (s?.user && s.user.email_confirmed_at) {
         loadProfile(s.user.id);
-      } else {
+      } else if (!s?.user) {
         setProfile(null);
       }
+      // If the user exists but hasn't confirmed their email yet (event ===
+      // 'SIGNED_IN' immediately after signUp with confirmation disabled),
+      // we intentionally leave profile null so isAuthenticated stays false.
     });
 
     return () => subscription.unsubscribe();
@@ -67,6 +73,16 @@ export function AuthProvider({ children }) {
     city,
     address,
   ) {
+    // Validate date format before it reaches the DB trigger.
+    // The trigger casts this to ::date — a bad string would crash it silently.
+    const isValidDate = (d) => {
+      if (!d) return false;
+      const re = /^\d{4}-\d{2}-\d{2}$/;
+      if (!re.test(d)) return false;
+      const parsed = new Date(d);
+      return !isNaN(parsed.getTime());
+    };
+
     return supabase.auth.signUp({
       email,
       password,
@@ -75,7 +91,7 @@ export function AuthProvider({ children }) {
           first_name: firstName,
           last_name: lastName,
           phone: phone || null,
-          date_of_birth: dateOfBirth || null,
+          date_of_birth: isValidDate(dateOfBirth) ? dateOfBirth : null,
           country: country || null,
           city: city || null,
           address: address || null,
