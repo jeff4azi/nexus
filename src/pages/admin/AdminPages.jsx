@@ -84,9 +84,10 @@ function Dialog({ item, mode, onClose, onComplete }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [success, setSuccess] = useState("");
+  const [proofUrl, setProofUrl] = useState(null);
   const dialogRef = useRef(null);
   const returnFocus = useRef(null);
+
   useEffect(() => {
     if (!item) return undefined;
     returnFocus.current = document.activeElement;
@@ -98,15 +99,40 @@ function Dialog({ item, mode, onClose, onComplete }) {
       () => dialogRef.current?.querySelector("button, textarea")?.focus(),
       0,
     );
+
+    if (item.proof_url) {
+      supabase.storage
+        .from("deposit-proofs")
+        .createSignedUrl(item.proof_url, 300)
+        .then(({ data }) => {
+          if (data?.signedUrl) setProofUrl(data.signedUrl);
+        });
+    }
+
     return () => {
       document.removeEventListener("keydown", onKey);
       returnFocus.current?.focus?.();
+      setProofUrl(null);
     };
   }, [item, onClose]);
+
   if (!item) return null;
-  const approve = async (action) => {
+
+  const act = async (action) => {
     setBusy(true);
     setErr("");
+
+    if (action === "delete") {
+      const { error } = await supabase.rpc("admin_delete_deposit", {
+        p_deposit_id: item.id,
+      });
+      setBusy(false);
+      if (error) return setErr(error.message);
+      onComplete();
+      onClose();
+      return;
+    }
+
     const rpc =
       mode === "deposit" ? "admin_review_deposit" : "admin_review_withdrawal";
     const args =
@@ -121,14 +147,16 @@ function Dialog({ item, mode, onClose, onComplete }) {
             p_status: action === "approve" ? "Paid" : "Rejected",
             p_note: note || null,
           };
+
     const { error } = await supabase.rpc(rpc, args);
     setBusy(false);
     if (error) return setErr(error.message);
     onComplete();
-    setSuccess(
-      `${mode === "withdrawal" ? "Payment marked paid" : action === "approve" ? "Deposit approved" : "Deposit rejected"} at ${date(new Date())}. ${note ? "Review note recorded." : "Decision recorded in the audit trail."}`,
-    );
+    onClose();
   };
+
+  const isPending = item.status === "Pending Review";
+
   return (
     <div
       style={{
@@ -147,12 +175,14 @@ function Dialog({ item, mode, onClose, onComplete }) {
         aria-labelledby="review-dialog-title"
         ref={dialogRef}
         style={{
-          width: "min(800px,100%)",
+          width: "min(860px,100%)",
           background: "#121a2a",
           border: "1px solid rgba(201,168,76,.28)",
           borderRadius: 14,
           boxShadow: "0 24px 80px #000",
-          padding: 24,
+          padding: 28,
+          maxHeight: "90vh",
+          overflowY: "auto",
         }}
       >
         <div
@@ -160,6 +190,7 @@ function Dialog({ item, mode, onClose, onComplete }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "start",
+            marginBottom: 20,
           }}
         >
           <div>
@@ -175,17 +206,15 @@ function Dialog({ item, mode, onClose, onComplete }) {
             </div>
             <h2
               style={{
-                margin: "5px 0",
+                margin: "5px 0 2px",
                 color: "#fff",
                 fontFamily: "Cormorant Garamond, serif",
-                fontSize: 28,
+                fontSize: 32,
               }}
             >
               <span id="review-dialog-title">{money(item.amount)}</span>
             </h2>
-            <div style={{ color: "#a6b0bf", fontSize: 13 }}>
-              {item.reference || item.proof_reference || item.id}
-            </div>
+            <div style={{ color: "#a6b0bf", fontSize: 13 }}>{item.id}</div>
           </div>
           <button
             aria-label="Close"
@@ -200,81 +229,180 @@ function Dialog({ item, mode, onClose, onComplete }) {
             <X />
           </button>
         </div>
+
         <div
           style={{
-            margin: "20px 0",
-            padding: "14px",
-            background: "rgba(255,255,255,.03)",
-            borderRadius: 8,
-            fontSize: 13,
-            lineHeight: 1.7,
+            display: "grid",
+            gridTemplateColumns: proofUrl ? "1fr 1fr" : "1fr",
+            gap: 20,
+            marginBottom: 20,
           }}
         >
-          <div>
-            Client:{" "}
-            <strong style={{ color: "#fff" }}>
-              {item.user?.first_name || "Unknown"} {item.user?.last_name || ""}
-            </strong>
-          </div>
-          <div>Submitted: {date(item.created_at)}</div>
-          <div>Method: {item.payment_method || item.payment_type || "—"}</div>
-        </div>
-        <label style={{ fontSize: 12, color: "#b7c2d0", display: "block" }}>
-          Internal review note
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Reason, proof reference, or transfer confirmation"
+          <div
             style={{
-              width: "100%",
-              minHeight: 78,
-              marginTop: 7,
-              boxSizing: "border-box",
-              background: "#0b101b",
-              color: "#fff",
-              border: "1px solid rgba(201,168,76,.22)",
-              borderRadius: 8,
-              padding: 10,
-              fontFamily: "inherit",
+              padding: "16px",
+              background: "rgba(255,255,255,.03)",
+              borderRadius: 10,
+              fontSize: 13,
+              lineHeight: 1.9,
             }}
-          />
-        </label>
+          >
+            <Detail
+              label="Client"
+              value={`${item.user?.first_name || "Unknown"} ${item.user?.last_name || ""}`}
+            />
+            <Detail
+              label="Method"
+              value={item.method || item.payment_method || "—"}
+            />
+            <Detail label="Amount" value={money(item.amount)} highlight />
+            <Detail label="Submitted" value={date(item.created_at)} />
+            <Detail label="Status" value={item.status} />
+            {item.review_note && (
+              <Detail label="Prior note" value={item.review_note} />
+            )}
+          </div>
+          {proofUrl && (
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#8290a2",
+                  letterSpacing: 1,
+                  marginBottom: 8,
+                }}
+              >
+                PROOF OF PAYMENT
+              </div>
+              {item.proof_url?.endsWith(".pdf") ? (
+                <a
+                  href={proofUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#C9A84C", fontSize: 13 }}
+                >
+                  Open PDF ↗
+                </a>
+              ) : (
+                <a href={proofUrl} target="_blank" rel="noreferrer">
+                  <img
+                    src={proofUrl}
+                    alt="Proof of payment"
+                    style={{
+                      width: "100%",
+                      borderRadius: 8,
+                      border: "1px solid rgba(201,168,76,.15)",
+                      maxHeight: 280,
+                      objectFit: "contain",
+                      background: "#0a101b",
+                    }}
+                  />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+
+        {isPending && (
+          <label
+            style={{
+              fontSize: 12,
+              color: "#b7c2d0",
+              display: "block",
+              marginBottom: 16,
+            }}
+          >
+            Internal review note (optional)
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Proof reference, transaction hash, or rejection reason"
+              style={{
+                width: "100%",
+                minHeight: 72,
+                marginTop: 7,
+                boxSizing: "border-box",
+                background: "#0b101b",
+                color: "#fff",
+                border: "1px solid rgba(201,168,76,.22)",
+                borderRadius: 8,
+                padding: 10,
+                fontFamily: "inherit",
+                resize: "vertical",
+              }}
+            />
+          </label>
+        )}
+
         {err && (
-          <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 10 }}>
+          <div style={{ color: "#fca5a5", fontSize: 12, marginBottom: 12 }}>
             {err}
           </div>
         )}
+
         <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 9,
-            marginTop: 18,
-          }}
+          style={{ display: "flex", justifyContent: "space-between", gap: 9 }}
         >
-          <button onClick={onClose} style={button("plain")}>
-            Cancel
-          </button>
           <button
+            onClick={() => act("delete")}
             disabled={busy}
-            onClick={() => approve("reject")}
             style={button("danger")}
           >
-            Reject
+            🗑 Delete
           </button>
-          <button
-            disabled={busy}
-            onClick={() => approve("approve")}
-            style={button()}
-          >
-            {busy
-              ? "Saving…"
-              : mode === "withdrawal"
-                ? "Confirm paid"
-                : "Approve deposit"}
-          </button>
+          <div style={{ display: "flex", gap: 9 }}>
+            <button onClick={onClose} style={button("plain")}>
+              Cancel
+            </button>
+            {isPending && (
+              <>
+                <button
+                  disabled={busy}
+                  onClick={() => act("reject")}
+                  style={button("danger")}
+                >
+                  Reject
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => act("approve")}
+                  style={button()}
+                >
+                  {busy
+                    ? "Saving…"
+                    : mode === "withdrawal"
+                      ? "Confirm paid"
+                      : "Approve & credit"}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </section>
+    </div>
+  );
+}
+function Detail({ label, value, highlight }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        borderBottom: "1px solid rgba(255,255,255,.05)",
+        padding: "6px 0",
+      }}
+    >
+      <span style={{ color: "#8290a2", flexShrink: 0 }}>{label}</span>
+      <span
+        style={{
+          color: highlight ? "#4ade80" : "#dce4ed",
+          fontWeight: highlight ? 700 : 400,
+          textAlign: "right",
+        }}
+      >
+        {value || "—"}
+      </span>
     </div>
   );
 }
@@ -368,9 +496,9 @@ async function attachUsers(rows) {
   const ids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
   if (!ids.length) return rows;
   const { data } = await supabase
-    .from("profiles")
+    .from("admin_user_profiles")
     .select(
-      "id,first_name,last_name,account_id,account_status,kyc_status,phone,country,city,address,ssn_last4",
+      "id,first_name,last_name,account_id,account_status,kyc_status,phone,country,city,address,ssn_last4,email",
     )
     .in("id", ids);
   const map = Object.fromEntries((data || []).map((u) => [u.id, u]));

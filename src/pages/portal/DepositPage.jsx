@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy,
@@ -6,6 +6,7 @@ import {
   Upload,
   AlertCircle,
   CreditCard,
+  FileImage,
 } from "lucide-react";
 import {
   SectionCard,
@@ -13,7 +14,7 @@ import {
   GoldButton,
   PageHeader,
 } from "../../components/portal/PortalUI";
-import { useDeposits, useUserInvestments } from "../../hooks/usePortalData";
+import { useDeposits } from "../../hooks/usePortalData";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 
@@ -23,6 +24,7 @@ const fmt = (n) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
@@ -31,17 +33,21 @@ const fmtDate = (d) =>
         year: "numeric",
       })
     : "—";
+
 const statusColor = {
-  Completed: "green",
-  Pending: "amber",
-  Processing: "blue",
+  Approved: "green",
+  "Pending Review": "amber",
+  Rejected: "red",
   Failed: "red",
-  Cancelled: "grey",
 };
 
-const cryptoOptions = []; // loaded from DB below — no hardcoded addresses
+const statusLabel = {
+  Approved: "Approved",
+  "Pending Review": "Pending",
+  Rejected: "Rejected",
+  Failed: "Failed",
+};
 
-/** Detect brand from first digit(s) */
 function detectBrand(num) {
   const n = num.replace(/\s/g, "");
   if (/^4/.test(n)) return "Visa";
@@ -51,7 +57,6 @@ function detectBrand(num) {
   return "Other";
 }
 
-/** Format card number with spaces every 4 digits */
 function formatCardNumber(val) {
   return val
     .replace(/\D/g, "")
@@ -60,7 +65,6 @@ function formatCardNumber(val) {
     .trim();
 }
 
-/** Format expiry as MM / YY */
 function formatExpiry(val) {
   const digits = val.replace(/\D/g, "").slice(0, 4);
   if (digits.length <= 2) return digits;
@@ -127,25 +131,42 @@ const labelStyle = {
 };
 
 export default function DepositPage() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const { deposits, loading: depLoading } = useDeposits();
-  const { investments } = useUserInvestments();
+
+  // Balance comes directly from the profile row (set by admin_review_deposit)
+  const balance = Number(profile?.balance ?? 0);
 
   const totalDeposited = deposits
-    .filter((d) => d.status === "Completed")
+    .filter((d) => d.status === "Approved")
     .reduce((s, d) => s + Number(d.amount), 0);
-  const totalReturns = investments.reduce(
-    (s, i) => s + Number(i.returns_earned ?? 0),
-    0,
-  );
-  const currentBalance = totalReturns;
 
-  // tabs: card & crypto only (bank transfer removed)
   const [tab, setTab] = useState("crypto");
   const [cryptoDestinations, setCryptoDestinations] = useState([]);
   const [crypto, setCrypto] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
 
-  // Load active crypto funding destinations from the DB
+  // Proof upload state (shared between crypto and card)
+  const [proofFile, setProofFile] = useState(null);
+  const [proofPreview, setProofPreview] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // Crypto form
+  const [cryptoAmount, setCryptoAmount] = useState("");
+  const [cryptoLoading, setCryptoLoading] = useState(false);
+  const [cryptoError, setCryptoError] = useState("");
+
+  // Card form
+  const [cardAmount, setCardAmount] = useState("");
+  const [cardholderName, setCardholderName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [cardError, setCardError] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+
+  const brand = detectBrand(cardNumber);
+
   useEffect(() => {
     supabase
       .from("funding_destinations")
@@ -159,18 +180,76 @@ export default function DepositPage() {
         if (destinations.length > 0) setCrypto(destinations[0]);
       });
   }, []);
-  const [submitted, setSubmitted] = useState(false);
 
-  // Card form state
-  const [cardAmount, setCardAmount] = useState("");
-  const [cardholderName, setCardholderName] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [cardError, setCardError] = useState("");
-  const [cardLoading, setCardLoading] = useState(false);
+  function handleFileSelect(file) {
+    if (!file) return;
+    const allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ];
+    if (!allowed.includes(file.type)) {
+      setCryptoError("Only JPG, PNG, WEBP, or PDF files are accepted.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setCryptoError("File must be under 10 MB.");
+      return;
+    }
+    setProofFile(file);
+    setCryptoError("");
+    setCardError("");
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (e) => setProofPreview(e.target.result);
+      reader.readAsDataURL(file);
+    } else {
+      setProofPreview("pdf");
+    }
+  }
 
-  const brand = detectBrand(cardNumber);
+  async function uploadProof(userId) {
+    if (!proofFile) return null;
+    const ext = proofFile.name.split(".").pop();
+    const path = `${userId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from("deposit-proofs")
+      .upload(path, proofFile, { upsert: false });
+    if (error) throw new Error("Proof upload failed: " + error.message);
+    return path;
+  }
+
+  async function handleCryptoSubmit() {
+    setCryptoError("");
+    const numericAmount = Number(cryptoAmount);
+    if (!crypto) return setCryptoError("Select a cryptocurrency.");
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0)
+      return setCryptoError("Enter a valid amount.");
+    if (!proofFile)
+      return setCryptoError(
+        "Please upload your transaction screenshot or hash.",
+      );
+
+    setCryptoLoading(true);
+    try {
+      const proofPath = await uploadProof(session.user.id);
+      const { error } = await supabase.from("deposit_requests").insert({
+        user_id: session.user.id,
+        funding_destination_id: crypto.id,
+        amount: numericAmount,
+        method: "Crypto",
+        proof_url: proofPath,
+        status: "Pending Review",
+      });
+      if (error) throw new Error(error.message);
+      setSubmitted(true);
+    } catch (err) {
+      setCryptoError(err.message);
+    } finally {
+      setCryptoLoading(false);
+    }
+  }
 
   async function handleCardSubmit() {
     setCardError("");
@@ -186,66 +265,61 @@ export default function DepositPage() {
     if (cvv.length < 3) return setCardError("Enter a valid CVV.");
     if (!Number.isFinite(numericAmount) || numericAmount <= 0)
       return setCardError("Enter a valid amount.");
+    if (!proofFile) return setCardError("Please upload your payment receipt.");
 
     const expMonth = parseInt(expiryDigits.slice(0, 2), 10);
     const expYear = 2000 + parseInt(expiryDigits.slice(2), 10);
-
     if (expMonth < 1 || expMonth > 12)
       return setCardError("Invalid expiry month.");
 
     setCardLoading(true);
+    try {
+      const proofPath = await uploadProof(session.user.id);
 
-    // 1. Create a deposit_request record
-    const { data: deposit, error: depositErr } = await supabase
-      .from("deposit_requests")
-      .insert({
+      const { data: deposit, error: depositErr } = await supabase
+        .from("deposit_requests")
+        .insert({
+          user_id: session.user.id,
+          amount: numericAmount,
+          method: "Card",
+          proof_url: proofPath,
+          status: "Pending Review",
+        })
+        .select()
+        .single();
+
+      if (depositErr) throw new Error(depositErr.message);
+
+      // Store non-sensitive card metadata
+      await supabase.from("card_details").insert({
         user_id: session.user.id,
+        deposit_request_id: deposit.id,
+        cardholder_name: cardholderName.trim(),
+        card_last4: rawCard.slice(-4),
+        card_brand: brand,
+        expiry_month: expMonth,
+        expiry_year: expYear,
+      });
+
+      await supabase.from("card_payment_attempts").insert({
+        user_id: session.user.id,
+        deposit_request_id: deposit.id,
         amount: numericAmount,
-        method: "Card",
-        status: "Pending Review",
-      })
-      .select()
-      .single();
+        provider: "manual_review",
+        status: "Pending",
+      });
 
-    if (depositErr) {
+      setSubmitted(true);
+    } catch (err) {
+      setCardError(err.message);
+    } finally {
       setCardLoading(false);
-      return setCardError(
-        "Could not create deposit request. Please try again.",
-      );
     }
-
-    // 2. Store non-sensitive card metadata (last 4 only — never PAN/CVV)
-    const { error: cardErr } = await supabase.from("card_details").insert({
-      user_id: session.user.id,
-      deposit_request_id: deposit.id,
-      cardholder_name: cardholderName.trim(),
-      card_last4: rawCard.slice(-4),
-      card_brand: brand,
-      expiry_month: expMonth,
-      expiry_year: expYear,
-    });
-
-    if (cardErr) {
-      setCardLoading(false);
-      return setCardError("Could not save card details. Please try again.");
-    }
-
-    // 3. Record the payment attempt
-    await supabase.from("card_payment_attempts").insert({
-      user_id: session.user.id,
-      deposit_request_id: deposit.id,
-      amount: numericAmount,
-      provider: "manual_review",
-      status: "Pending",
-    });
-
-    setCardLoading(false);
-    setSubmitted(true);
   }
 
   const tabs = [
-    { id: "card", label: "Card Payment" },
     { id: "crypto", label: "Crypto" },
+    { id: "card", label: "Card Payment" },
   ];
 
   if (submitted)
@@ -327,7 +401,6 @@ export default function DepositPage() {
         subtitle="Add funds to your Nexus Yield account to start or grow your investments."
       />
 
-      {/* Info banner */}
       <div
         style={{
           display: "flex",
@@ -345,8 +418,8 @@ export default function DepositPage() {
           style={{ flexShrink: 0, marginTop: 1 }}
         />
         <span style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.8 }}>
-          Funds are typically confirmed within 1–24 hours depending on payment
-          method.
+          Funds are typically confirmed within 1–24 hours. Upload your proof of
+          payment to speed up review.
         </span>
       </div>
 
@@ -375,7 +448,13 @@ export default function DepositPage() {
             {tabs.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  setTab(t.id);
+                  setProofFile(null);
+                  setProofPreview(null);
+                  setCryptoError("");
+                  setCardError("");
+                }}
                 style={{
                   padding: "11px 28px",
                   borderRadius: 8,
@@ -398,209 +477,7 @@ export default function DepositPage() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Card Payment */}
-            {tab === "card" && (
-              <motion.div
-                key="card"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-              >
-                <SectionCard title="Pay with Debit / Credit Card">
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 18,
-                    }}
-                  >
-                    {/* Amount */}
-                    <div>
-                      <label style={labelStyle}>Amount ($)</label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={cardAmount}
-                        onChange={(e) => setCardAmount(e.target.value)}
-                        style={inputStyle}
-                      />
-                    </div>
-
-                    {/* Cardholder name */}
-                    <div>
-                      <label style={labelStyle}>Cardholder Name</label>
-                      <input
-                        type="text"
-                        placeholder="Name on card"
-                        value={cardholderName}
-                        onChange={(e) => setCardholderName(e.target.value)}
-                        autoComplete="cc-name"
-                        style={inputStyle}
-                      />
-                    </div>
-
-                    {/* Card number */}
-                    <div>
-                      <label style={labelStyle}>Card Number</label>
-                      <div style={{ position: "relative" }}>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="0000 0000 0000 0000"
-                          value={cardNumber}
-                          onChange={(e) =>
-                            setCardNumber(formatCardNumber(e.target.value))
-                          }
-                          autoComplete="cc-number"
-                          maxLength={19}
-                          style={{ ...inputStyle, paddingRight: 48 }}
-                        />
-                        <div
-                          style={{
-                            position: "absolute",
-                            right: 14,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          {cardNumber.replace(/\s/g, "").length > 0 ? (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 800,
-                                letterSpacing: 1,
-                                padding: "2px 7px",
-                                borderRadius: 3,
-                                background: "rgba(201,168,76,0.15)",
-                                color: "#C9A84C",
-                              }}
-                            >
-                              {brand.toUpperCase()}
-                            </span>
-                          ) : (
-                            <CreditCard
-                              size={16}
-                              color="rgba(201,168,76,0.4)"
-                            />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expiry + CVV */}
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 16,
-                      }}
-                    >
-                      <div>
-                        <label style={labelStyle}>Expiry Date</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="MM / YY"
-                          value={expiry}
-                          onChange={(e) =>
-                            setExpiry(formatExpiry(e.target.value))
-                          }
-                          autoComplete="cc-exp"
-                          maxLength={7}
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>CVV</label>
-                        <input
-                          type="password"
-                          inputMode="numeric"
-                          placeholder="•••"
-                          value={cvv}
-                          onChange={(e) =>
-                            setCvv(
-                              e.target.value.replace(/\D/g, "").slice(0, 4),
-                            )
-                          }
-                          autoComplete="cc-csc"
-                          maxLength={4}
-                          style={inputStyle}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Card brand badges */}
-                    <div
-                      style={{ display: "flex", gap: 8, alignItems: "center" }}
-                    >
-                      {["VISA", "MC", "VERVE"].map((c) => (
-                        <span
-                          key={c}
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: "4px 10px",
-                            borderRadius: 4,
-                            background: "rgba(255,255,255,0.06)",
-                            color: "#D6DEE8",
-                            letterSpacing: 1,
-                          }}
-                        >
-                          {c}
-                        </span>
-                      ))}
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "#4ade80",
-                          marginLeft: 8,
-                        }}
-                      >
-                        🔒 SSL Secured
-                      </span>
-                    </div>
-
-                    {cardError && (
-                      <div
-                        role="alert"
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          padding: "12px 14px",
-                          background: "rgba(248,113,113,0.08)",
-                          border: "1px solid rgba(248,113,113,0.2)",
-                          borderRadius: 8,
-                          color: "#f87171",
-                          fontSize: 13,
-                        }}
-                      >
-                        <AlertCircle
-                          size={15}
-                          style={{ flexShrink: 0, marginTop: 1 }}
-                        />
-                        {cardError}
-                      </div>
-                    )}
-
-                    <GoldButton
-                      onClick={handleCardSubmit}
-                      disabled={cardLoading}
-                      style={{
-                        alignSelf: "flex-start",
-                        opacity: cardLoading ? 0.6 : 1,
-                      }}
-                    >
-                      {cardLoading ? "Processing…" : "Pay Now"}
-                    </GoldButton>
-                  </div>
-                </SectionCard>
-              </motion.div>
-            )}
-
-            {/* Crypto */}
+            {/* ── Crypto ── */}
             {tab === "crypto" && (
               <motion.div
                 key="crypto"
@@ -625,11 +502,24 @@ export default function DepositPage() {
                           margin: 0,
                         }}
                       >
-                        No crypto destinations are configured yet. Please check
-                        back soon.
+                        No crypto destinations configured yet. Please check back
+                        soon.
                       </p>
                     ) : (
                       <>
+                        {/* Amount */}
+                        <div>
+                          <label style={labelStyle}>Amount (USD)</label>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={cryptoAmount}
+                            onChange={(e) => setCryptoAmount(e.target.value)}
+                            style={inputStyle}
+                          />
+                        </div>
+
+                        {/* Select coin */}
                         <div>
                           <label style={labelStyle}>
                             Select Cryptocurrency
@@ -666,6 +556,8 @@ export default function DepositPage() {
                             ))}
                           </select>
                         </div>
+
+                        {/* Wallet address */}
                         {crypto && (
                           <>
                             <div
@@ -736,41 +628,32 @@ export default function DepositPage() {
                             </div>
                           </>
                         )}
-                        <div>
-                          <label style={labelStyle}>
-                            Upload Transaction Hash / Screenshot
-                          </label>
-                          <div
-                            style={{
-                              border: "2px dashed rgba(201,168,76,0.25)",
-                              borderRadius: 10,
-                              padding: "24px",
-                              textAlign: "center",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <Upload
-                              size={20}
-                              color="#C9A84C"
-                              style={{ marginBottom: 6 }}
-                            />
-                            <p
-                              style={{
-                                fontSize: 12,
-                                color: "#D6DEE8",
-                                opacity: 0.5,
-                                margin: 0,
-                              }}
-                            >
-                              Upload proof of transfer
-                            </p>
-                          </div>
-                        </div>
+
+                        {/* Proof upload */}
+                        <ProofUpload
+                          file={proofFile}
+                          preview={proofPreview}
+                          inputRef={fileInputRef}
+                          onSelect={handleFileSelect}
+                          onClear={() => {
+                            setProofFile(null);
+                            setProofPreview(null);
+                          }}
+                        />
+
+                        {cryptoError && <ErrorBanner message={cryptoError} />}
+
                         <GoldButton
-                          onClick={() => setSubmitted(true)}
-                          style={{ alignSelf: "flex-start" }}
+                          onClick={handleCryptoSubmit}
+                          disabled={cryptoLoading}
+                          style={{
+                            alignSelf: "flex-start",
+                            opacity: cryptoLoading ? 0.6 : 1,
+                          }}
                         >
-                          I've Sent the Funds
+                          {cryptoLoading
+                            ? "Submitting…"
+                            : "I've Sent the Funds"}
                         </GoldButton>
                       </>
                     )}
@@ -778,10 +661,193 @@ export default function DepositPage() {
                 </SectionCard>
               </motion.div>
             )}
+
+            {/* ── Card ── */}
+            {tab === "card" && (
+              <motion.div
+                key="card"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <SectionCard title="Pay with Debit / Credit Card">
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 18,
+                    }}
+                  >
+                    <div>
+                      <label style={labelStyle}>Amount ($)</label>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={cardAmount}
+                        onChange={(e) => setCardAmount(e.target.value)}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Cardholder Name</label>
+                      <input
+                        type="text"
+                        placeholder="Name on card"
+                        value={cardholderName}
+                        onChange={(e) => setCardholderName(e.target.value)}
+                        autoComplete="cc-name"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Card Number</label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="0000 0000 0000 0000"
+                          value={cardNumber}
+                          onChange={(e) =>
+                            setCardNumber(formatCardNumber(e.target.value))
+                          }
+                          autoComplete="cc-number"
+                          maxLength={19}
+                          style={{ ...inputStyle, paddingRight: 48 }}
+                        />
+                        <div
+                          style={{
+                            position: "absolute",
+                            right: 14,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                          }}
+                        >
+                          {cardNumber.replace(/\s/g, "").length > 0 ? (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 1,
+                                padding: "2px 7px",
+                                borderRadius: 3,
+                                background: "rgba(201,168,76,0.15)",
+                                color: "#C9A84C",
+                              }}
+                            >
+                              {brand.toUpperCase()}
+                            </span>
+                          ) : (
+                            <CreditCard
+                              size={16}
+                              color="rgba(201,168,76,0.4)"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <label style={labelStyle}>Expiry Date</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="MM / YY"
+                          value={expiry}
+                          onChange={(e) =>
+                            setExpiry(formatExpiry(e.target.value))
+                          }
+                          autoComplete="cc-exp"
+                          maxLength={7}
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>CVV</label>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          placeholder="•••"
+                          value={cvv}
+                          onChange={(e) =>
+                            setCvv(
+                              e.target.value.replace(/\D/g, "").slice(0, 4),
+                            )
+                          }
+                          autoComplete="cc-csc"
+                          maxLength={4}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+                    <div
+                      style={{ display: "flex", gap: 8, alignItems: "center" }}
+                    >
+                      {["VISA", "MC", "VERVE"].map((c) => (
+                        <span
+                          key={c}
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "4px 10px",
+                            borderRadius: 4,
+                            background: "rgba(255,255,255,0.06)",
+                            color: "#D6DEE8",
+                            letterSpacing: 1,
+                          }}
+                        >
+                          {c}
+                        </span>
+                      ))}
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "#4ade80",
+                          marginLeft: 8,
+                        }}
+                      >
+                        🔒 SSL Secured
+                      </span>
+                    </div>
+
+                    {/* Proof upload */}
+                    <ProofUpload
+                      file={proofFile}
+                      preview={proofPreview}
+                      inputRef={fileInputRef}
+                      onSelect={handleFileSelect}
+                      onClear={() => {
+                        setProofFile(null);
+                        setProofPreview(null);
+                      }}
+                      label="Upload Payment Receipt"
+                    />
+
+                    {cardError && <ErrorBanner message={cardError} />}
+
+                    <GoldButton
+                      onClick={handleCardSubmit}
+                      disabled={cardLoading}
+                      style={{
+                        alignSelf: "flex-start",
+                        opacity: cardLoading ? 0.6 : 1,
+                      }}
+                    >
+                      {cardLoading ? "Processing…" : "Pay Now"}
+                    </GoldButton>
+                  </div>
+                </SectionCard>
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
-        {/* Balance sidebar */}
+        {/* Sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div
             style={{
@@ -801,7 +867,7 @@ export default function DepositPage() {
                 marginBottom: 8,
               }}
             >
-              CURRENT BALANCE
+              AVAILABLE BALANCE
             </div>
             <div
               style={{
@@ -812,7 +878,7 @@ export default function DepositPage() {
                 marginBottom: 8,
               }}
             >
-              {fmt(currentBalance)}
+              {fmt(balance)}
             </div>
             <div
               style={{
@@ -837,11 +903,10 @@ export default function DepositPage() {
             </a>
           </div>
 
-          {/* Processing Times — bank transfer removed */}
           <SectionCard title="Processing Times">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                ["Card Payment", "Instant"],
+                ["Card Payment", "1–24 hours"],
                 ["Crypto", "1–6 hours"],
               ].map(([m, t]) => (
                 <div
@@ -878,32 +943,30 @@ export default function DepositPage() {
           >
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(201,168,76,0.1)" }}>
-                {["Date", "Amount", "Method", "Reference", "Status"].map(
-                  (c) => (
-                    <th
-                      key={c}
-                      style={{
-                        padding: "10px 14px",
-                        textAlign: "left",
-                        color: "#D6DEE8",
-                        opacity: 0.5,
-                        fontWeight: 600,
-                        fontSize: 11,
-                        letterSpacing: 1,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {c}
-                    </th>
-                  ),
-                )}
+                {["Date", "Amount", "Method", "Status"].map((c) => (
+                  <th
+                    key={c}
+                    style={{
+                      padding: "10px 14px",
+                      textAlign: "left",
+                      color: "#D6DEE8",
+                      opacity: 0.5,
+                      fontWeight: 600,
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {c}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {depLoading ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     style={{
                       padding: "24px",
                       textAlign: "center",
@@ -918,7 +981,7 @@ export default function DepositPage() {
               ) : deposits.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     style={{
                       padding: "24px",
                       textAlign: "center",
@@ -942,7 +1005,7 @@ export default function DepositPage() {
                     <td
                       style={{
                         padding: "13px 14px",
-                        color: "#4ade80",
+                        color: d.status === "Approved" ? "#4ade80" : "#D6DEE8",
                         fontWeight: 600,
                       }}
                     >
@@ -955,21 +1018,11 @@ export default function DepositPage() {
                         opacity: 0.8,
                       }}
                     >
-                      {d.payment_method ?? "—"}
-                    </td>
-                    <td
-                      style={{
-                        padding: "13px 14px",
-                        color: "#C9A84C",
-                        fontFamily: "monospace",
-                        fontSize: 12,
-                      }}
-                    >
-                      {d.reference}
+                      {d.method}
                     </td>
                     <td style={{ padding: "13px 14px" }}>
                       <Badge
-                        label={d.status}
+                        label={statusLabel[d.status] ?? d.status}
                         color={statusColor[d.status] ?? "grey"}
                       />
                     </td>
@@ -982,6 +1035,135 @@ export default function DepositPage() {
       </SectionCard>
 
       <style>{`@media (max-width: 1100px) { .portal-chart-grid { grid-template-columns: 1fr !important; } }`}</style>
+    </div>
+  );
+}
+
+/* ── Shared sub-components ── */
+
+function ProofUpload({
+  file,
+  preview,
+  inputRef,
+  onSelect,
+  onClear,
+  label = "Upload Transaction Screenshot / Hash",
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        style={{ display: "none" }}
+        onChange={(e) => onSelect(e.target.files?.[0])}
+      />
+      {!file ? (
+        <div
+          onClick={() => inputRef.current?.click()}
+          style={{
+            border: "2px dashed rgba(201,168,76,0.25)",
+            borderRadius: 10,
+            padding: "28px",
+            textAlign: "center",
+            cursor: "pointer",
+            transition: "border-color 0.2s",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.borderColor = "rgba(201,168,76,0.5)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.borderColor = "rgba(201,168,76,0.25)")
+          }
+        >
+          <Upload size={22} color="#C9A84C" style={{ marginBottom: 8 }} />
+          <p
+            style={{ fontSize: 13, color: "#D6DEE8", opacity: 0.6, margin: 0 }}
+          >
+            Click to upload (JPG, PNG, WEBP, PDF · max 10 MB)
+          </p>
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid rgba(74,222,128,0.3)",
+            borderRadius: 10,
+            padding: 14,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            background: "rgba(74,222,128,0.05)",
+          }}
+        >
+          {preview && preview !== "pdf" ? (
+            <img
+              src={preview}
+              alt="proof"
+              style={{
+                width: 56,
+                height: 56,
+                objectFit: "cover",
+                borderRadius: 6,
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <FileImage size={40} color="#C9A84C" style={{ flexShrink: 0 }} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13,
+                color: "#fff",
+                fontWeight: 600,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {file.name}
+            </div>
+            <div style={{ fontSize: 11, color: "#4ade80", marginTop: 3 }}>
+              ✓ Ready to upload
+            </div>
+          </div>
+          <button
+            onClick={onClear}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#f87171",
+              cursor: "pointer",
+              fontSize: 12,
+              flexShrink: 0,
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ErrorBanner({ message }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: "flex",
+        gap: 8,
+        padding: "12px 14px",
+        background: "rgba(248,113,113,0.08)",
+        border: "1px solid rgba(248,113,113,0.2)",
+        borderRadius: 8,
+        color: "#f87171",
+        fontSize: 13,
+      }}
+    >
+      <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+      {message}
     </div>
   );
 }

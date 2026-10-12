@@ -166,7 +166,10 @@ export function useCryptoWallets() {
   useEffect(() => {
     if (!session?.user) return;
     setLoading(true);
-    supabase.from("crypto_wallets").select("*").eq("user_id", session.user.id)
+    supabase
+      .from("crypto_wallets")
+      .select("*")
+      .eq("user_id", session.user.id)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("[crypto_wallets]", error.message);
@@ -176,15 +179,22 @@ export function useCryptoWallets() {
   }, [session?.user?.id]);
 
   async function addWallet(payload) {
-    const { data, error } = await supabase.from("crypto_wallets")
-      .insert({ ...payload, user_id: session.user.id }).select().single();
+    const { data, error } = await supabase
+      .from("crypto_wallets")
+      .insert({ ...payload, user_id: session.user.id })
+      .select()
+      .single();
     if (data) setWallets((items) => [data, ...items]);
     return { data, error };
   }
 
   async function removeWallet(id) {
-    const { error } = await supabase.from("crypto_wallets").delete().eq("id", id);
-    if (!error) setWallets((items) => items.filter((wallet) => wallet.id !== id));
+    const { error } = await supabase
+      .from("crypto_wallets")
+      .delete()
+      .eq("id", id);
+    if (!error)
+      setWallets((items) => items.filter((wallet) => wallet.id !== id));
     return { error };
   }
 
@@ -248,11 +258,12 @@ export function useDeposits() {
   useEffect(() => {
     if (!session?.user) return;
     setLoading(true);
+    // Read from deposit_requests so pending deposits show up immediately,
+    // not just completed ones from the transactions table.
     supabase
-      .from("transactions")
+      .from("deposit_requests")
       .select("*")
       .eq("user_id", session.user.id)
-      .eq("type", "Deposit")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("[deposits]", error.message);

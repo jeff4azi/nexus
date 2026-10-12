@@ -165,7 +165,7 @@ const txTypeSign = (type) =>
     : "-";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { transactions, loading: txLoading } = useTransactions();
   const { investments, loading: invLoading } = useUserInvestments();
   const { notifications, loading: notifLoading } = useNotifications();
@@ -191,13 +191,16 @@ export default function DashboardPage() {
       ? ((totalReturns / totalInvested) * 100).toFixed(2)
       : "0.00";
 
+  // Available balance comes from profile.balance (set atomically when admin approves a deposit)
+  const availableBalance = Number(profile?.balance ?? 0);
+
   const kpis = [
     {
-      label: "Total Portfolio Value",
-      value: fmt(totalValue),
+      label: "Available Balance",
+      value: fmt(availableBalance),
       icon: DollarSign,
       accent: true,
-      sub: "current value",
+      sub: "ready to invest",
     },
     {
       label: "Total Invested",
