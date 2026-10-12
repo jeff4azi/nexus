@@ -824,46 +824,37 @@ function Record({ label, value }) {
 export function FundingPage() {
   const { data, loading, error, reload } = useAdminData(
     "funding_destinations",
-    { filter: (q) => q.order("created_at", { ascending: false }) },
+    {
+      filter: (q) =>
+        q.eq("kind", "crypto").order("created_at", { ascending: false }),
+    },
   );
-  const [form, setForm] = useState({
-      kind: "bank",
-      label: "",
-      currency: "USD",
-      details: "",
-    }),
-    [msg, setMsg] = useState("");
+
+  const empty_form = { label: "", asset: "", network: "", wallet_address: "" };
+  const [form, setForm] = useState(empty_form);
+  const [msg, setMsg] = useState({ text: "", ok: true });
+  const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
   const save = async (e) => {
     e.preventDefault();
-    const payload =
-      form.kind === "bank"
-        ? {
-            kind: "bank",
-            label: form.label,
-            currency: form.currency,
-            bank_name: form.label,
-            account_name: form.label,
-            account_number: form.details,
-            is_active: true,
-          }
-        : {
-            kind: "crypto",
-            label: form.label,
-            currency: form.currency,
-            asset: form.currency,
-            network: "Mainnet",
-            wallet_address: form.details,
-            is_active: true,
-          };
-    const { error } = await supabase
-      .from("funding_destinations")
-      .insert(payload);
-    setMsg(error ? error.message : "Funding destination added.");
-    if (!error) {
-      setForm({ kind: "bank", label: "", currency: "USD", details: "" });
+    const { error } = await supabase.from("funding_destinations").insert({
+      kind: "crypto",
+      label: form.label.trim(),
+      currency: "USD",
+      asset: form.asset.trim(),
+      network: form.network.trim(),
+      wallet_address: form.wallet_address.trim(),
+      is_active: true,
+    });
+    if (error) {
+      setMsg({ text: error.message, ok: false });
+    } else {
+      setMsg({ text: "Destination added.", ok: true });
+      setForm(empty_form);
       reload();
     }
   };
+
   const toggle = async (d) => {
     await supabase
       .from("funding_destinations")
@@ -871,13 +862,43 @@ export function FundingPage() {
       .eq("id", d.id);
     reload();
   };
+
+  const remove = async (id) => {
+    if (!window.confirm("Delete this funding destination?")) return;
+    await supabase.from("funding_destinations").delete().eq("id", id);
+    reload();
+  };
+
+  const inputStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    marginTop: 5,
+    padding: 10,
+    background: "#0a101b",
+    border: "1px solid rgba(201,168,76,.2)",
+    borderRadius: 7,
+    color: "#fff",
+    fontFamily: "DM Sans, sans-serif",
+    fontSize: 13,
+    outline: "none",
+  };
+
   return (
     <>
-      <Title eyebrow="SETTLEMENT CONFIGURATION" title="Funding destinations" />
+      <Title
+        eyebrow="SETTLEMENT CONFIGURATION"
+        title="Crypto funding destinations"
+      />
       <div
         className="admin-grid"
-        style={{ display: "grid", gridTemplateColumns: "1.4fr .8fr", gap: 18 }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr .8fr",
+          gap: 18,
+          alignItems: "start",
+        }}
       >
+        {/* Live destinations */}
         <SectionCard title="Live destinations">
           <State loading={loading} error={error} empty={!data.length}>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -885,41 +906,64 @@ export function FundingPage() {
                 <div
                   key={d.id}
                   style={{
-                    padding: 14,
+                    padding: 16,
                     border: "1px solid rgba(201,168,76,.12)",
-                    borderRadius: 9,
+                    borderRadius: 10,
                     display: "flex",
                     justifyContent: "space-between",
                     gap: 12,
+                    alignItems: "flex-start",
                   }}
                 >
-                  <div>
-                    <div style={{ color: "#fff", fontWeight: 700 }}>
-                      {d.label} <Badge label={d.kind} color="gold" />
-                    </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 12,
-                        color: "#9ba7b7",
-                        marginTop: 5,
-                        wordBreak: "break-word",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 6,
                       }}
                     >
-                      {d.kind === "crypto"
-                        ? d.wallet_address
-                        : `${d.bank_name} · ${d.account_number}`}
+                      <span
+                        style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}
+                      >
+                        {d.label}
+                      </span>
+                      <Badge label={`${d.asset} · ${d.network}`} color="gold" />
                     </div>
+                    <code
+                      style={{
+                        fontSize: 11,
+                        color: "#9ba7b7",
+                        wordBreak: "break-all",
+                        display: "block",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {d.wallet_address}
+                    </code>
                   </div>
-                  <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 8,
+                      flexShrink: 0,
+                    }}
+                  >
                     <Badge
                       label={d.is_active ? "Active" : "Disabled"}
                       color={d.is_active ? "green" : "grey"}
                     />
-                    <button
-                      onClick={() => toggle(d)}
-                      style={{ ...button(), display: "block", marginTop: 9 }}
-                    >
+                    <button onClick={() => toggle(d)} style={button()}>
                       {d.is_active ? "Disable" : "Enable"}
+                    </button>
+                    <button
+                      onClick={() => remove(d.id)}
+                      style={button("danger")}
+                    >
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -927,50 +971,79 @@ export function FundingPage() {
             </div>
           </State>
         </SectionCard>
-        <SectionCard title="Add destination">
-          <form onSubmit={save} style={{ display: "grid", gap: 10 }}>
+
+        {/* Add destination */}
+        <SectionCard title="Add crypto destination">
+          <p
+            style={{
+              fontSize: 12,
+              color: "#8290a2",
+              marginTop: 0,
+              marginBottom: 14,
+              lineHeight: 1.6,
+            }}
+          >
+            These appear in the client deposit screen as selectable crypto
+            options. Clients will see the label, asset, network, and wallet
+            address.
+          </p>
+          <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
             {[
-              ["label", "Display name"],
-              ["currency", "Currency"],
-              ["details", "Bank details or crypto address"],
-            ].map(([key, label]) => (
-              <label key={key} style={{ fontSize: 12, color: "#b7c2d0" }}>
+              {
+                key: "label",
+                label: "Display name",
+                placeholder: "e.g. USDT (TRC-20)",
+              },
+              { key: "asset", label: "Asset / Coin", placeholder: "e.g. USDT" },
+              { key: "network", label: "Network", placeholder: "e.g. TRC-20" },
+              {
+                key: "wallet_address",
+                label: "Wallet address",
+                placeholder: "e.g. TQn9Y2kh…",
+              },
+            ].map(({ key, label, placeholder }) => (
+              <label
+                key={key}
+                style={{ fontSize: 12, color: "#b7c2d0", display: "block" }}
+              >
                 {label}
                 <input
                   required
                   value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    marginTop: 5,
-                    padding: 10,
-                    background: "#0a101b",
-                    border: "1px solid rgba(201,168,76,.2)",
-                    borderRadius: 7,
-                    color: "#fff",
-                  }}
+                  onChange={set(key)}
+                  placeholder={placeholder}
+                  style={inputStyle}
                 />
               </label>
             ))}
-            <select
-              value={form.kind}
-              onChange={(e) => setForm({ ...form, kind: e.target.value })}
+            {msg.text && (
+              <div
+                style={{
+                  fontSize: 12,
+                  padding: "10px 12px",
+                  borderRadius: 7,
+                  background: msg.ok
+                    ? "rgba(74,222,128,.08)"
+                    : "rgba(248,113,113,.08)",
+                  border: `1px solid ${msg.ok ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`,
+                  color: msg.ok ? "#4ade80" : "#fca5a5",
+                }}
+              >
+                {msg.text}
+              </div>
+            )}
+            <button
+              type="submit"
               style={{
-                padding: 10,
-                background: "#0a101b",
-                color: "#fff",
-                border: "1px solid rgba(201,168,76,.2)",
-                borderRadius: 7,
+                ...button(),
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                justifyContent: "center",
               }}
             >
-              <option value="bank">Bank</option>
-              <option value="crypto">Crypto</option>
-            </select>
-            <button style={button()}>
               <Check size={13} /> Save destination
             </button>
-            {msg && <div style={{ fontSize: 12, color: "#b7c2d0" }}>{msg}</div>}
           </form>
         </SectionCard>
       </div>
@@ -1033,7 +1106,7 @@ export function AdminAccountsPage() {
     loading,
     error,
     reload,
-  } = useAdminData("profiles", {
+  } = useAdminData("admin_user_profiles", {
     filter: (q) =>
       q
         .in("role", ["admin", "super_admin"])
@@ -1210,7 +1283,7 @@ export function AdminAccountsPage() {
                             fontSize: 12,
                           }}
                         >
-                          {a.account_id}
+                          {a.email}
                         </td>
                         <td style={{ padding: 12 }}>
                           <Badge

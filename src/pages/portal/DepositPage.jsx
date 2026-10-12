@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy,
@@ -39,21 +39,7 @@ const statusColor = {
   Cancelled: "grey",
 };
 
-const cryptoOptions = [
-  { coin: "USDT (TRC-20)", address: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE" },
-  {
-    coin: "USDT (ERC-20)",
-    address: "0x742d35Cc6634C0532925a3b8D4C9E2C4e8b1f2a3",
-  },
-  {
-    coin: "Bitcoin (BTC)",
-    address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-  },
-  {
-    coin: "Ethereum (ETH)",
-    address: "0x742d35Cc6634C0532925a3b8D4C9E2C4e8b1f2a3",
-  },
-];
+const cryptoOptions = []; // loaded from DB below — no hardcoded addresses
 
 /** Detect brand from first digit(s) */
 function detectBrand(num) {
@@ -156,7 +142,23 @@ export default function DepositPage() {
 
   // tabs: card & crypto only (bank transfer removed)
   const [tab, setTab] = useState("crypto");
-  const [crypto, setCrypto] = useState(cryptoOptions[0]);
+  const [cryptoDestinations, setCryptoDestinations] = useState([]);
+  const [crypto, setCrypto] = useState(null);
+
+  // Load active crypto funding destinations from the DB
+  useEffect(() => {
+    supabase
+      .from("funding_destinations")
+      .select("id, label, asset, network, wallet_address")
+      .eq("kind", "crypto")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        const destinations = data ?? [];
+        setCryptoDestinations(destinations);
+        if (destinations.length > 0) setCrypto(destinations[0]);
+      });
+  }, []);
   const [submitted, setSubmitted] = useState(false);
 
   // Card form state
@@ -614,142 +616,164 @@ export default function DepositPage() {
                       gap: 20,
                     }}
                   >
-                    <div>
-                      <label style={labelStyle}>Select Cryptocurrency</label>
-                      <select
-                        value={crypto.coin}
-                        onChange={(e) =>
-                          setCrypto(
-                            cryptoOptions.find(
-                              (c) => c.coin === e.target.value,
-                            ),
-                          )
-                        }
+                    {cryptoDestinations.length === 0 ? (
+                      <p
                         style={{
-                          width: "100%",
-                          background: "rgba(255,255,255,0.04)",
-                          border: "1px solid rgba(201,168,76,0.2)",
-                          borderRadius: 10,
-                          padding: "13px 16px",
-                          color: "#fff",
-                          fontSize: 14,
-                          outline: "none",
-                          cursor: "pointer",
+                          fontSize: 13,
+                          color: "#D6DEE8",
+                          opacity: 0.45,
+                          margin: 0,
                         }}
                       >
-                        {cryptoOptions.map((c) => (
-                          <option
-                            key={c.coin}
-                            value={c.coin}
-                            style={{ background: "#0F1422" }}
+                        No crypto destinations are configured yet. Please check
+                        back soon.
+                      </p>
+                    ) : (
+                      <>
+                        <div>
+                          <label style={labelStyle}>
+                            Select Cryptocurrency
+                          </label>
+                          <select
+                            value={crypto?.id ?? ""}
+                            onChange={(e) =>
+                              setCrypto(
+                                cryptoDestinations.find(
+                                  (c) => c.id === e.target.value,
+                                ),
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              background: "rgba(255,255,255,0.04)",
+                              border: "1px solid rgba(201,168,76,0.2)",
+                              borderRadius: 10,
+                              padding: "13px 16px",
+                              color: "#fff",
+                              fontSize: 14,
+                              outline: "none",
+                              cursor: "pointer",
+                            }}
                           >
-                            {c.coin}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div
-                      style={{
-                        background: "rgba(255,255,255,0.02)",
-                        border: "1px solid rgba(201,168,76,0.12)",
-                        borderRadius: 12,
-                        padding: "20px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#D6DEE8",
-                          opacity: 0.5,
-                          marginBottom: 8,
-                          letterSpacing: 1,
-                        }}
-                      >
-                        WALLET ADDRESS
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: 12,
-                        }}
-                      >
-                        <code
-                          style={{
-                            fontSize: 12,
-                            color: "#C9A84C",
-                            wordBreak: "break-all",
-                            flex: 1,
-                          }}
+                            {cryptoDestinations.map((c) => (
+                              <option
+                                key={c.id}
+                                value={c.id}
+                                style={{ background: "#0F1422" }}
+                              >
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {crypto && (
+                          <>
+                            <div
+                              style={{
+                                background: "rgba(255,255,255,0.02)",
+                                border: "1px solid rgba(201,168,76,0.12)",
+                                borderRadius: 12,
+                                padding: "20px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "#D6DEE8",
+                                  opacity: 0.5,
+                                  marginBottom: 8,
+                                  letterSpacing: 1,
+                                }}
+                              >
+                                WALLET ADDRESS
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  gap: 12,
+                                }}
+                              >
+                                <code
+                                  style={{
+                                    fontSize: 12,
+                                    color: "#C9A84C",
+                                    wordBreak: "break-all",
+                                    flex: 1,
+                                  }}
+                                >
+                                  {crypto.wallet_address}
+                                </code>
+                                <CopyButton text={crypto.wallet_address} />
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 10,
+                                padding: "12px 16px",
+                                background: "rgba(251,191,36,0.08)",
+                                border: "1px solid rgba(251,191,36,0.2)",
+                                borderRadius: 10,
+                              }}
+                            >
+                              <AlertCircle
+                                size={15}
+                                color="#fbbf24"
+                                style={{ flexShrink: 0, marginTop: 1 }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: "#D6DEE8",
+                                  opacity: 0.75,
+                                }}
+                              >
+                                Network fees apply. Only send {crypto.asset} on
+                                the {crypto.network} network to this address.
+                              </span>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label style={labelStyle}>
+                            Upload Transaction Hash / Screenshot
+                          </label>
+                          <div
+                            style={{
+                              border: "2px dashed rgba(201,168,76,0.25)",
+                              borderRadius: 10,
+                              padding: "24px",
+                              textAlign: "center",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <Upload
+                              size={20}
+                              color="#C9A84C"
+                              style={{ marginBottom: 6 }}
+                            />
+                            <p
+                              style={{
+                                fontSize: 12,
+                                color: "#D6DEE8",
+                                opacity: 0.5,
+                                margin: 0,
+                              }}
+                            >
+                              Upload proof of transfer
+                            </p>
+                          </div>
+                        </div>
+                        <GoldButton
+                          onClick={() => setSubmitted(true)}
+                          style={{ alignSelf: "flex-start" }}
                         >
-                          {crypto.address}
-                        </code>
-                        <CopyButton text={crypto.address} />
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        padding: "12px 16px",
-                        background: "rgba(251,191,36,0.08)",
-                        border: "1px solid rgba(251,191,36,0.2)",
-                        borderRadius: 10,
-                      }}
-                    >
-                      <AlertCircle
-                        size={15}
-                        color="#fbbf24"
-                        style={{ flexShrink: 0, marginTop: 1 }}
-                      />
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: "#D6DEE8",
-                          opacity: 0.75,
-                        }}
-                      >
-                        Network fees apply. Only send the selected coin to this
-                        address.
-                      </span>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>
-                        Upload Transaction Hash / Screenshot
-                      </label>
-                      <div
-                        style={{
-                          border: "2px dashed rgba(201,168,76,0.25)",
-                          borderRadius: 10,
-                          padding: "24px",
-                          textAlign: "center",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Upload
-                          size={20}
-                          color="#C9A84C"
-                          style={{ marginBottom: 6 }}
-                        />
-                        <p
-                          style={{
-                            fontSize: 12,
-                            color: "#D6DEE8",
-                            opacity: 0.5,
-                            margin: 0,
-                          }}
-                        >
-                          Upload proof of transfer
-                        </p>
-                      </div>
-                    </div>
-                    <GoldButton
-                      onClick={() => setSubmitted(true)}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      I've Sent the Funds
-                    </GoldButton>
+                          I've Sent the Funds
+                        </GoldButton>
+                      </>
+                    )}
                   </div>
                 </SectionCard>
               </motion.div>
