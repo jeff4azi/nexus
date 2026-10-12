@@ -8,11 +8,14 @@ import {
   Landmark,
   RefreshCw,
   Send,
+  ShieldCheck,
+  UserPlus,
   Users,
   WalletCards,
   X,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../context/AuthContext";
 import { Badge, KPICard, SectionCard } from "../../components/portal/PortalUI";
 
 const money = (n) =>
@@ -87,10 +90,18 @@ function Dialog({ item, mode, onClose, onComplete }) {
   useEffect(() => {
     if (!item) return undefined;
     returnFocus.current = document.activeElement;
-    const onKey = (event) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event) => {
+      if (event.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", onKey);
-    setTimeout(() => dialogRef.current?.querySelector("button, textarea")?.focus(), 0);
-    return () => { document.removeEventListener("keydown", onKey); returnFocus.current?.focus?.(); };
+    setTimeout(
+      () => dialogRef.current?.querySelector("button, textarea")?.focus(),
+      0,
+    );
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      returnFocus.current?.focus?.();
+    };
   }, [item, onClose]);
   if (!item) return null;
   const approve = async (action) => {
@@ -114,7 +125,9 @@ function Dialog({ item, mode, onClose, onComplete }) {
     setBusy(false);
     if (error) return setErr(error.message);
     onComplete();
-    setSuccess(`${mode === "withdrawal" ? "Payment marked paid" : action === "approve" ? "Deposit approved" : "Deposit rejected"} at ${date(new Date())}. ${note ? "Review note recorded." : "Decision recorded in the audit trail."}`);
+    setSuccess(
+      `${mode === "withdrawal" ? "Payment marked paid" : action === "approve" ? "Deposit approved" : "Deposit rejected"} at ${date(new Date())}. ${note ? "Review note recorded." : "Decision recorded in the audit trail."}`,
+    );
   };
   return (
     <div
@@ -738,9 +751,7 @@ function ClientDrawer({ user, close }) {
         />
         <Record
           label="SSN last four"
-          value={
-            user.ssn_last4 ? `•••-••-${user.ssn_last4}` : "Not supplied"
-          }
+          value={user.ssn_last4 ? `•••-••-${user.ssn_last4}` : "Not supplied"}
         />
         <h3 style={{ color: "#fff", fontSize: 14, marginTop: 25 }}>
           Withdrawal destinations
@@ -824,10 +835,29 @@ export function FundingPage() {
     [msg, setMsg] = useState("");
   const save = async (e) => {
     e.preventDefault();
-    const payload = form.kind === "bank"
-      ? { kind: "bank", label: form.label, currency: form.currency, bank_name: form.label, account_name: form.label, account_number: form.details, is_active: true }
-      : { kind: "crypto", label: form.label, currency: form.currency, asset: form.currency, network: "Mainnet", wallet_address: form.details, is_active: true };
-    const { error } = await supabase.from("funding_destinations").insert(payload);
+    const payload =
+      form.kind === "bank"
+        ? {
+            kind: "bank",
+            label: form.label,
+            currency: form.currency,
+            bank_name: form.label,
+            account_name: form.label,
+            account_number: form.details,
+            is_active: true,
+          }
+        : {
+            kind: "crypto",
+            label: form.label,
+            currency: form.currency,
+            asset: form.currency,
+            network: "Mainnet",
+            wallet_address: form.details,
+            is_active: true,
+          };
+    const { error } = await supabase
+      .from("funding_destinations")
+      .insert(payload);
     setMsg(error ? error.message : "Funding destination added.");
     if (!error) {
       setForm({ kind: "bank", label: "", currency: "USD", details: "" });
@@ -875,7 +905,9 @@ export function FundingPage() {
                         wordBreak: "break-word",
                       }}
                     >
-                      {d.kind === "crypto" ? d.wallet_address : `${d.bank_name} · ${d.account_number}`}
+                      {d.kind === "crypto"
+                        ? d.wallet_address
+                        : `${d.bank_name} · ${d.account_number}`}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -987,5 +1019,330 @@ function Title({ eyebrow, title, action }) {
 function Responsive() {
   return (
     <style>{`@media(max-width:900px){.admin-grid{grid-template-columns:1fr!important}.admin-kpis{grid-template-columns:1fr!important}}`}</style>
+  );
+}
+
+export function AdminAccountsPage() {
+  const { profile: currentProfile } = useAuth();
+  const isSuperAdmin = currentProfile?.role === "super_admin";
+
+  // All hooks must be called unconditionally — the early return for non-super-admin
+  // is handled in the render section below, not before hooks.
+  const {
+    data: admins,
+    loading,
+    error,
+    reload,
+  } = useAdminData("profiles", {
+    filter: (q) =>
+      q
+        .in("role", ["admin", "super_admin"])
+        .order("created_at", { ascending: true }),
+  });
+
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState({ text: "", ok: true });
+  const [revoking, setRevoking] = useState(null);
+
+  const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
+
+  // Guard — shown after all hooks have been called
+  if (!isSuperAdmin) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", color: "#fca5a5" }}>
+        <ShieldCheck size={32} style={{ marginBottom: 12 }} />
+        <div>Only the super admin can manage admin accounts.</div>
+      </div>
+    );
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setMsg({ text: "", ok: true });
+    if (form.password.length < 12) {
+      setMsg({ text: "Password must be at least 12 characters.", ok: false });
+      return;
+    }
+    setSaving(true);
+
+    // Calls the create-admin Edge Function which uses the service-role key
+    // server-side — the key never reaches the browser.
+    const { data, error } = await supabase.functions.invoke("create-admin", {
+      body: {
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        first_name: form.firstName.trim(),
+        last_name: form.lastName.trim(),
+      },
+    });
+
+    setSaving(false);
+    if (error || data?.error) {
+      setMsg({ text: error?.message ?? data?.error, ok: false });
+    } else {
+      setMsg({ text: `Admin account created for ${form.email}.`, ok: true });
+      setForm({ firstName: "", lastName: "", email: "", password: "" });
+      reload();
+    }
+  }
+
+  async function handleRevoke(admin) {
+    if (
+      !window.confirm(
+        `Revoke admin access for ${admin.first_name} ${admin.last_name}?`,
+      )
+    )
+      return;
+    setRevoking(admin.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role: "user" })
+      .eq("id", admin.id);
+    setRevoking(null);
+    if (error) {
+      setMsg({ text: error.message, ok: false });
+    } else {
+      reload();
+    }
+  }
+
+  const inputStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    background: "#0a101b",
+    border: "1px solid rgba(201,168,76,.2)",
+    borderRadius: 7,
+    padding: "10px 12px",
+    color: "#fff",
+    fontSize: 13,
+    fontFamily: "DM Sans, sans-serif",
+    outline: "none",
+    marginTop: 5,
+  };
+
+  return (
+    <>
+      <Title eyebrow="ACCESS MANAGEMENT" title="Admin accounts" />
+      <div
+        className="admin-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 380px",
+          gap: 18,
+          alignItems: "start",
+        }}
+      >
+        {/* Existing admins */}
+        <SectionCard
+          title={`${admins.length} admin account${admins.length !== 1 ? "s" : ""}`}
+        >
+          <State loading={loading} error={error} empty={!admins.length}>
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <thead>
+                  <tr>
+                    {["Name", "Email", "Role", "Status", "Since", ""].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          style={{
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            color: "#8290a2",
+                            fontSize: 10,
+                            letterSpacing: 1,
+                            borderBottom: "1px solid rgba(201,168,76,.12)",
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {admins.map((a) => {
+                    const isSelf = a.id === currentProfile?.id;
+                    const isTargetSuperAdmin = a.role === "super_admin";
+                    return (
+                      <tr
+                        key={a.id}
+                        style={{
+                          borderBottom: "1px solid rgba(255,255,255,.05)",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: 12,
+                            color: "#fff",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {a.first_name} {a.last_name}
+                          {isSelf && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: "#C9A84C",
+                                marginLeft: 6,
+                              }}
+                            >
+                              YOU
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: 12,
+                            color: "#9ba7b7",
+                            fontSize: 12,
+                          }}
+                        >
+                          {a.account_id}
+                        </td>
+                        <td style={{ padding: 12 }}>
+                          <Badge
+                            label={
+                              a.role === "super_admin" ? "Super Admin" : "Admin"
+                            }
+                            color={a.role === "super_admin" ? "gold" : "blue"}
+                          />
+                        </td>
+                        <td style={{ padding: 12 }}>
+                          <Badge
+                            label={a.account_status}
+                            color={tone(a.account_status)}
+                          />
+                        </td>
+                        <td
+                          style={{
+                            padding: 12,
+                            color: "#9ba7b7",
+                            fontSize: 12,
+                          }}
+                        >
+                          {date(a.created_at)}
+                        </td>
+                        <td style={{ padding: 12 }}>
+                          {!isSelf && !isTargetSuperAdmin && (
+                            <button
+                              onClick={() => handleRevoke(a)}
+                              disabled={revoking === a.id}
+                              style={button("danger")}
+                            >
+                              {revoking === a.id
+                                ? "Revoking…"
+                                : "Revoke access"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </State>
+        </SectionCard>
+
+        {/* Create new admin */}
+        <SectionCard title="Create admin account">
+          <p
+            style={{
+              fontSize: 12,
+              color: "#8290a2",
+              marginTop: 0,
+              marginBottom: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            New admins can review deposits, process withdrawals, and manage
+            client records. Only you (super admin) can create or revoke admin
+            access.
+          </p>
+          <form
+            onSubmit={handleCreate}
+            style={{ display: "flex", flexDirection: "column", gap: 12 }}
+          >
+            {[
+              { key: "firstName", label: "First name", placeholder: "Jane" },
+              { key: "lastName", label: "Last name", placeholder: "Smith" },
+              {
+                key: "email",
+                label: "Email",
+                placeholder: "jane@nexusyield.org",
+              },
+              {
+                key: "password",
+                label: "Temporary password (min 12 chars)",
+                placeholder: "••••••••••••",
+                type: "password",
+              },
+            ].map(({ key, label, placeholder, type = "text" }) => (
+              <label
+                key={key}
+                style={{ fontSize: 12, color: "#b7c2d0", display: "block" }}
+              >
+                {label}
+                <input
+                  required
+                  type={type}
+                  value={form[key]}
+                  onChange={set(key)}
+                  placeholder={placeholder}
+                  style={inputStyle}
+                  autoComplete={type === "password" ? "new-password" : "off"}
+                />
+              </label>
+            ))}
+
+            {msg.text && (
+              <div
+                style={{
+                  fontSize: 12,
+                  padding: "10px 12px",
+                  borderRadius: 7,
+                  background: msg.ok
+                    ? "rgba(74,222,128,.08)"
+                    : "rgba(248,113,113,.08)",
+                  border: `1px solid ${msg.ok ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`,
+                  color: msg.ok ? "#4ade80" : "#fca5a5",
+                }}
+              >
+                {msg.text}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={saving}
+              style={{
+                ...button(),
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                justifyContent: "center",
+              }}
+            >
+              <UserPlus size={13} />
+              {saving ? "Creating…" : "Create admin"}
+            </button>
+          </form>
+        </SectionCard>
+      </div>
+      <Responsive />
+    </>
   );
 }

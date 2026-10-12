@@ -26,7 +26,14 @@ import PortalLayout from "./components/portal/PortalLayout";
 import ProtectedRoute from "./components/portal/ProtectedRoute";
 import AdminRoute from "./components/admin/AdminRoute";
 import AdminLayout from "./components/admin/AdminLayout";
-import { OverviewPage, UsersPage, DepositsPage, WithdrawalsPage, FundingPage } from "./pages/admin/AdminPages";
+import {
+  OverviewPage,
+  UsersPage,
+  DepositsPage,
+  WithdrawalsPage,
+  FundingPage,
+  AdminAccountsPage,
+} from "./pages/admin/AdminPages";
 
 function Portal({ children }) {
   return (
@@ -56,11 +63,54 @@ const router = createBrowserRouter([
   { path: "/reset-password", element: <ResetPasswordPage /> },
 
   // Internal operations console. Access is enforced by profiles.role.
-  { path: "/admin", element: <Admin><OverviewPage /></Admin> },
-  { path: "/admin/users", element: <Admin><UsersPage /></Admin> },
-  { path: "/admin/deposits", element: <Admin><DepositsPage /></Admin> },
-  { path: "/admin/withdrawals", element: <Admin><WithdrawalsPage /></Admin> },
-  { path: "/admin/funding", element: <Admin><FundingPage /></Admin> },
+  {
+    path: "/admin",
+    element: (
+      <Admin>
+        <OverviewPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/users",
+    element: (
+      <Admin>
+        <UsersPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/deposits",
+    element: (
+      <Admin>
+        <DepositsPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/withdrawals",
+    element: (
+      <Admin>
+        <WithdrawalsPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/funding",
+    element: (
+      <Admin>
+        <FundingPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/accounts",
+    element: (
+      <Admin>
+        <AdminAccountsPage />
+      </Admin>
+    ),
+  },
 
   // Protected portal
   {

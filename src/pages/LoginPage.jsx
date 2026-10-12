@@ -160,19 +160,22 @@ function Spinner() {
 }
 
 export default function LoginPage() {
-  const { signIn, isAuthenticated, ready } = useAuth();
+  const { signIn, isAuthenticated, ready, profile } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Redirect if already authenticated (handles back-button after login)
+  // Redirect if already authenticated — admins go to /admin, users to portal
   useEffect(() => {
-    if (ready && isAuthenticated) {
-      navigate("/portal/dashboard", { replace: true });
+    if (ready && isAuthenticated && profile) {
+      const dest = ["admin", "super_admin"].includes(profile.role)
+        ? "/admin"
+        : "/portal/dashboard";
+      navigate(dest, { replace: true });
     }
-  }, [isAuthenticated, ready, navigate]);
+  }, [isAuthenticated, ready, profile, navigate]);
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
 
