@@ -28,7 +28,8 @@ const columns = [
   {
     title: "Invest",
     links: [
-      { label: "View Plans", to: "/#plans" },
+      { label: "Services", to: "/services" },
+      { label: "View Plans", to: "/plans" },
       { label: "Open Account", to: "/register" },
       { label: "Client Portal", to: "/portal/dashboard" },
     ],

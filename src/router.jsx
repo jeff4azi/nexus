@@ -13,6 +13,8 @@ import PrivacyPage from "./pages/PrivacyPage";
 import TermsPage from "./pages/TermsPage";
 import DisclosuresPage from "./pages/DisclosuresPage";
 import CompliancePage from "./pages/CompliancePage";
+import PlansPublicPage from "./pages/PlansPublicPage";
+import ServicesPage from "./pages/ServicesPage";
 
 // Portal pages
 import DashboardPage from "./pages/portal/DashboardPage";
@@ -70,6 +72,8 @@ const router = createBrowserRouter([
   { path: "/terms", element: <TermsPage /> },
   { path: "/disclosures", element: <DisclosuresPage /> },
   { path: "/compliance", element: <CompliancePage /> },
+  { path: "/plans", element: <PlansPublicPage /> },
+  { path: "/services", element: <ServicesPage /> },
 
   // Internal operations console. Access is enforced by profiles.role.
   {
