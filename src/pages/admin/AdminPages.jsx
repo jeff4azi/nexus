@@ -1711,16 +1711,22 @@ export function InvestmentsPage() {
     error,
     reload,
   } = useAdminData("user_investments", {
-    select:
-      "*, investment_plans(name, tier, roi_percent, duration_hrs), profiles!user_id(first_name, last_name, account_id)",
+    select: "*, investment_plans(name, tier, roi_percent, duration_hrs)",
     filter: (q) => q.order("created_at", { ascending: false }),
   });
 
   const [statusFilter, setStatusFilter] = useState("All");
-  const [dialog, setDialog] = useState(null); // { mode: 'activate'|'credit'|'mature', item }
+  const [dialog, setDialog] = useState(null);
   const [creditAmount, setCreditAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  const [rows, setRows] = useState([]);
+
+  // Attach profile info via separate query — same pattern as deposit/withdrawal queues
+  useEffect(() => {
+    attachUsers(raw).then(setRows);
+  }, [raw]);
 
   const statuses = [
     "All",
@@ -1738,7 +1744,7 @@ export function InvestmentsPage() {
     Cancelled: "grey",
   };
 
-  const shown = raw.filter(
+  const shown = rows.filter(
     (r) => statusFilter === "All" || r.status === statusFilter,
   );
 
@@ -1870,9 +1876,9 @@ export function InvestmentsPage() {
                     style={{ borderBottom: "1px solid rgba(255,255,255,.05)" }}
                   >
                     <td style={{ padding: 12, color: "#fff", fontWeight: 600 }}>
-                      {inv.profiles?.first_name} {inv.profiles?.last_name}
+                      {inv.user?.first_name} {inv.user?.last_name}
                       <div style={{ color: "#8290a2", fontSize: 11 }}>
-                        {inv.profiles?.account_id}
+                        {inv.user?.account_id}
                       </div>
                     </td>
                     <td style={{ padding: 12, color: "#D6DEE8" }}>
@@ -2005,8 +2011,7 @@ export function InvestmentsPage() {
                 margin: "0 0 16px",
               }}
             >
-              {dialog.item.profiles?.first_name}{" "}
-              {dialog.item.profiles?.last_name} —{" "}
+              {dialog.item.user?.first_name} {dialog.item.user?.last_name} —{" "}
               {dialog.item.investment_plans?.name}
             </h2>
             <div
@@ -2167,13 +2172,30 @@ export function AdminNotificationsPage() {
   async function handleDirect(e) {
     e.preventDefault();
     if (!userId.trim()) {
-      setResult({ ok: false, text: "Enter a user ID." });
+      setResult({ ok: false, text: "Enter an account ID." });
       return;
     }
     setSending(true);
     setResult(null);
+
+    // Look up the real UUID from the account_id (e.g. NXY-ABCD123456)
+    const { data: profileRow, error: lookupError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("account_id", userId.trim().toUpperCase())
+      .single();
+
+    if (lookupError || !profileRow) {
+      setSending(false);
+      setResult({
+        ok: false,
+        text: `No client found with account ID "${userId.trim()}".`,
+      });
+      return;
+    }
+
     const { error } = await supabase.from("notifications").insert({
-      user_id: userId.trim(),
+      user_id: profileRow.id,
       title: directForm.title,
       message: directForm.message,
       category: directForm.category,
@@ -2348,17 +2370,17 @@ export function AdminNotificationsPage() {
                 lineHeight: 1.6,
               }}
             >
-              Sends a notification directly to one user. Paste their profile
-              UUID from the client directory.
+              Sends a notification directly to one user. Use the client's
+              Account ID (e.g. NXY-ABCD123456) found in the client directory.
             </p>
             <form onSubmit={handleDirect} style={{ display: "grid", gap: 14 }}>
               <label style={{ fontSize: 12, color: "#b7c2d0" }}>
-                User ID (UUID)
+                Account ID
                 <input
                   required
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
-                  placeholder="e.g. 3f2a1b…"
+                  placeholder="e.g. NXY-ABCD123456"
                   style={inputStyle}
                 />
               </label>
