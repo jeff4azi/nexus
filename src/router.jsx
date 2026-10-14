@@ -9,6 +9,10 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import PrivacyPage from "./pages/PrivacyPage";
+import TermsPage from "./pages/TermsPage";
+import DisclosuresPage from "./pages/DisclosuresPage";
+import CompliancePage from "./pages/CompliancePage";
 
 // Portal pages
 import DashboardPage from "./pages/portal/DashboardPage";
@@ -54,7 +58,6 @@ function Admin({ children }) {
 }
 
 const router = createBrowserRouter([
-  // Public
   { path: "/", element: <LandingPage /> },
   { path: "/about", element: <AboutPage /> },
   { path: "/faq", element: <FAQPage /> },
@@ -63,6 +66,10 @@ const router = createBrowserRouter([
   { path: "/register", element: <RegisterPage /> },
   { path: "/forgot-password", element: <ForgotPasswordPage /> },
   { path: "/reset-password", element: <ResetPasswordPage /> },
+  { path: "/privacy", element: <PrivacyPage /> },
+  { path: "/terms", element: <TermsPage /> },
+  { path: "/disclosures", element: <DisclosuresPage /> },
+  { path: "/compliance", element: <CompliancePage /> },
 
   // Internal operations console. Access is enforced by profiles.role.
   {

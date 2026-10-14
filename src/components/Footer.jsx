@@ -1,28 +1,62 @@
+import { Link } from "react-router-dom";
+
+function LinkedInIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.258 5.63 5.906-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 const columns = [
   {
-    title: "Services",
+    title: "Company",
     links: [
-      "Portfolio Management",
-      "Fixed Income Yield",
-      "Alternative Investments",
-      "Wealth Advisory",
+      { label: "About Us", to: "/about" },
+      { label: "Contact", to: "/contact" },
+      { label: "FAQ", to: "/faq" },
     ],
   },
   {
-    title: "Company",
-    links: ["About Us", "Our Team", "Careers", "Press"],
+    title: "Invest",
+    links: [
+      { label: "View Plans", to: "/#plans" },
+      { label: "Open Account", to: "/register" },
+      { label: "Client Portal", to: "/portal/dashboard" },
+    ],
   },
   {
     title: "Legal",
-    links: ["Privacy Policy", "Terms of Service", "Disclosures", "Compliance"],
+    links: [
+      { label: "Privacy Policy", to: "/privacy" },
+      { label: "Terms of Service", to: "/terms" },
+      { label: "Disclosures", to: "/disclosures" },
+      { label: "Compliance", to: "/compliance" },
+    ],
   },
 ];
 
 const socials = [
-  { label: "LinkedIn", href: "#" },
-  { label: "X", href: "#" },
-  { label: "Bloomberg", href: "#" },
+  { label: "LinkedIn", href: "#", Icon: LinkedInIcon },
+  { label: "X", href: "#", Icon: XIcon },
 ];
+
+const linkStyle = {
+  color: "#D6DEE8",
+  opacity: 0.55,
+  fontSize: "0.875rem",
+  textDecoration: "none",
+  transition: "opacity 0.2s, color 0.2s",
+  display: "inline-block",
+};
 
 export default function Footer() {
   return (
@@ -46,11 +80,17 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <div style={{ marginBottom: "1rem" }}>
-              <img
-                src="/logo.png"
-                alt="Nexus Yield Group"
-                style={{ height: "44px", width: "auto", objectFit: "contain" }}
-              />
+              <Link to="/">
+                <img
+                  src="/logo.png"
+                  alt="Nexus Yield Group"
+                  style={{
+                    height: "44px",
+                    width: "auto",
+                    objectFit: "contain",
+                  }}
+                />
+              </Link>
             </div>
             <p
               style={{
@@ -65,17 +105,19 @@ export default function Footer() {
               Institutional-grade investment management for discerning investors
               seeking superior risk-adjusted returns.
             </p>
-            <div style={{ display: "flex", gap: "1rem" }}>
-              {socials.map((s) => (
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+              {socials.map(({ label, href, Icon }) => (
                 <a
-                  key={s.label}
-                  href={s.href}
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={label}
                   style={{
                     color: "#D6DEE8",
                     opacity: 0.5,
-                    fontSize: "0.78rem",
-                    textDecoration: "none",
-                    letterSpacing: "0.06em",
+                    display: "flex",
+                    alignItems: "center",
                     transition: "opacity 0.2s, color 0.2s",
                   }}
                   onMouseEnter={(e) => {
@@ -87,7 +129,7 @@ export default function Footer() {
                     e.currentTarget.style.color = "#D6DEE8";
                   }}
                 >
-                  {s.label}
+                  <Icon />
                 </a>
               ))}
             </div>
@@ -119,16 +161,10 @@ export default function Footer() {
                 }}
               >
                 {col.links.map((link) => (
-                  <li key={link}>
-                    <a
-                      href="#"
-                      style={{
-                        color: "#D6DEE8",
-                        opacity: 0.55,
-                        fontSize: "0.875rem",
-                        textDecoration: "none",
-                        transition: "opacity 0.2s, color 0.2s",
-                      }}
+                  <li key={link.label}>
+                    <Link
+                      to={link.to}
+                      style={{ ...linkStyle }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.opacity = "1";
                         e.currentTarget.style.color = "#C9A84C";
@@ -138,8 +174,8 @@ export default function Footer() {
                         e.currentTarget.style.color = "#D6DEE8";
                       }}
                     >
-                      {link}
-                    </a>
+                      {link.label}
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -167,7 +203,7 @@ export default function Footer() {
               margin: 0,
             }}
           >
-            © 2025 Nexus Yield Group. All rights reserved.
+            © {new Date().getFullYear()} Nexus Yield Group. All rights reserved.
           </p>
           <p
             style={{
