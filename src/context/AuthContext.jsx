@@ -169,7 +169,10 @@ export function AuthProvider({ children }) {
       }
     : null;
 
-  const isAuthenticated = !!session;
+  // A user is only considered authenticated once their email is confirmed.
+  // Supabase returns a session immediately after signUp (even before confirmation),
+  // so we must explicitly check email_confirmed_at here.
+  const isAuthenticated = !!session?.user?.email_confirmed_at;
 
   return (
     <AuthContext.Provider

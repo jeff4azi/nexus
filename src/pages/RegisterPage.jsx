@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, UserPlus, Check, AlertCircle } from "lucide-react";
 import logo from "../assets/logo.png";
 import { useAuth } from "../context/AuthContext";
-import { supabase } from "../lib/supabase";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -209,7 +208,6 @@ function Spinner() {
 
 export default function RegisterPage() {
   const { signUp } = useAuth();
-  const navigate = useNavigate();
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -244,7 +242,7 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
 
-    const { data, error } = await signUp(
+    const { error: signUpError } = await signUp(
       form.email,
       form.password,
       form.firstName,
@@ -256,45 +254,28 @@ export default function RegisterPage() {
       form.address,
     );
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
+    setLoading(false);
+
+    if (signUpError) {
+      // Translate raw Supabase error messages into user-friendly copy
+      const msg = signUpError.message ?? "";
+      if (
+        msg.toLowerCase().includes("user already registered") ||
+        msg.toLowerCase().includes("already been registered") ||
+        msg.toLowerCase().includes("email address is already")
+      ) {
+        setError(
+          "An account with this email already exists. Try signing in instead.",
+        );
+      } else {
+        setError(msg || "Something went wrong. Please try again.");
+      }
       return;
     }
 
-    // Issue 3 fix: verify the DB trigger actually created the profile row.
-    // We poll for up to ~5 seconds. If it never appears we surface a clear
-    // error rather than silently showing the success screen with a broken account.
-    const userId = data?.user?.id;
-    if (userId) {
-      const MAX_ATTEMPTS = 10;
-      const DELAY_MS = 500;
-      let profileFound = false;
-
-      for (let i = 0; i < MAX_ATTEMPTS; i++) {
-        await new Promise((r) => setTimeout(r, DELAY_MS));
-        const { data: profileRow } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("id", userId)
-          .maybeSingle();
-        if (profileRow) {
-          profileFound = true;
-          break;
-        }
-      }
-
-      if (!profileFound) {
-        setError(
-          "Your account was created but your profile could not be set up. " +
-            "Please contact support with your email address.",
-        );
-        setLoading(false);
-        return;
-      }
-    }
-
-    setLoading(false);
+    // Success — Supabase sent the confirmation email.
+    // We show the "check your email" screen regardless of whether the profile
+    // row exists yet; the DB trigger creates it after email confirmation.
     setEmailSent(true);
   };
 

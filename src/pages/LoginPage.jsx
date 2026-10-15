@@ -166,6 +166,8 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // "unconfirmed" state: user exists but hasn't verified their email yet
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
 
   // Redirect if already authenticated — admins go to /admin, users to portal
   useEffect(() => {
@@ -182,20 +184,32 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setUnconfirmedEmail("");
     setSubmitting(true);
 
     const { error: signInError } = await signIn(form.email, form.password);
+    setSubmitting(false);
 
     if (signInError) {
-      setError(
-        signInError.message === "Invalid login credentials"
-          ? "Incorrect email or password. Please try again."
-          : signInError.message,
-      );
-      setSubmitting(false);
-      return;
+      const msg = signInError.message ?? "";
+      if (
+        msg.toLowerCase().includes("invalid login credentials") ||
+        msg.toLowerCase().includes("invalid credentials")
+      ) {
+        setError("Incorrect email or password. Please try again.");
+      } else if (msg.toLowerCase().includes("email not confirmed")) {
+        // Show a dedicated "please confirm your email" banner instead of
+        // a generic error — more professional and actionable
+        setUnconfirmedEmail(form.email);
+      } else if (msg.toLowerCase().includes("too many requests")) {
+        setError(
+          "Too many sign-in attempts. Please wait a few minutes and try again.",
+        );
+      } else {
+        setError(msg || "Something went wrong. Please try again.");
+      }
     }
-    // onAuthStateChange fires → isAuthenticated becomes true → useEffect navigates
+    // on success: onAuthStateChange fires → isAuthenticated → useEffect navigates
   };
 
   if (!ready) return null;
@@ -311,6 +325,59 @@ export default function LoginPage() {
               >
                 {error}
               </span>
+            </motion.div>
+          )}
+
+          {unconfirmedEmail && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                padding: "16px",
+                background: "rgba(201,168,76,0.07)",
+                border: "1px solid rgba(201,168,76,0.3)",
+                borderRadius: 10,
+                marginBottom: 20,
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "DM Sans, sans-serif",
+                  fontSize: 13,
+                  color: "#C9A84C",
+                  fontWeight: 600,
+                  margin: "0 0 6px",
+                }}
+              >
+                Please confirm your email address
+              </p>
+              <p
+                style={{
+                  fontFamily: "DM Sans, sans-serif",
+                  fontSize: 13,
+                  color: "#D6DEE8",
+                  opacity: 0.75,
+                  margin: "0 0 10px",
+                  lineHeight: 1.6,
+                }}
+              >
+                We sent a confirmation link to{" "}
+                <span style={{ color: "#C9A84C", fontWeight: 600 }}>
+                  {unconfirmedEmail}
+                </span>
+                . Click the link in that email before signing in.
+              </p>
+              <p
+                style={{
+                  fontFamily: "DM Sans, sans-serif",
+                  fontSize: 12,
+                  color: "#D6DEE8",
+                  opacity: 0.5,
+                  margin: 0,
+                }}
+              >
+                Can't find it? Check your spam folder.
+              </p>
             </motion.div>
           )}
 
