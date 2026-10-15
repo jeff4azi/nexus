@@ -242,13 +242,7 @@ function InvestModal({ plan, onClose }) {
                 justifyContent: "center",
               }}
             >
-              {agreed && (
-                <span
-                  style={{ fontSize: 10, color: "#0A0E1A", fontWeight: 700 }}
-                >
-                  ✓
-                </span>
-              )}
+              {agreed && <Check size={11} color="#0A0E1A" />}
             </button>
             <span style={{ fontSize: 12, color: "#D6DEE8", opacity: 0.65 }}>
               I have read and agree to the Investment Terms.

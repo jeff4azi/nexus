@@ -8,6 +8,7 @@ import {
   Trash2,
   KeyRound,
   AlertCircle,
+  Bell,
 } from "lucide-react";
 import {
   SectionCard,
@@ -440,7 +441,7 @@ export default function SettingsPage() {
                   <Badge
                     label={
                       user?.kycStatus === "Verified"
-                        ? "✓ Verified"
+                        ? "Verified"
                         : (user?.kycStatus ?? "Unverified")
                     }
                     color={user?.kycStatus === "Verified" ? "green" : "amber"}
@@ -1202,7 +1203,11 @@ export default function SettingsPage() {
                 borderRadius: 10,
               }}
             >
-              <span style={{ fontSize: 18 }}>🔔</span>
+              <Bell
+                size={20}
+                color="#4ade80"
+                style={{ flexShrink: 0, marginTop: 1 }}
+              />
               <div>
                 <p
                   style={{

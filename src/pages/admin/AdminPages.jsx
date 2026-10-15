@@ -6,9 +6,12 @@ import {
   ChevronRight,
   Eye,
   Landmark,
+  Mail,
+  Radio,
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
   UserPlus,
   Users,
   WalletCards,
@@ -348,7 +351,15 @@ function Dialog({ item, mode, onClose, onComplete }) {
             disabled={busy}
             style={button("danger")}
           >
-            🗑 Delete
+            <Trash2
+              size={13}
+              style={{
+                display: "inline",
+                marginRight: 4,
+                verticalAlign: "middle",
+              }}
+            />
+            Delete
           </button>
           <div style={{ display: "flex", gap: 9 }}>
             <button onClick={onClose} style={button("plain")}>
@@ -2387,7 +2398,21 @@ export function AdminNotificationsPage() {
                   justifyContent: "center",
                 }}
               >
-                {sending ? "Sending…" : "📢 Send Broadcast"}
+                {sending ? (
+                  "Sending…"
+                ) : (
+                  <>
+                    <Radio
+                      size={14}
+                      style={{
+                        display: "inline",
+                        marginRight: 5,
+                        verticalAlign: "middle",
+                      }}
+                    />
+                    Send Broadcast
+                  </>
+                )}
               </button>
             </form>
           </SectionCard>
@@ -2486,7 +2511,21 @@ export function AdminNotificationsPage() {
                   justifyContent: "center",
                 }}
               >
-                {sending ? "Sending…" : "✉️ Send Notification"}
+                {sending ? (
+                  "Sending…"
+                ) : (
+                  <>
+                    <Mail
+                      size={14}
+                      style={{
+                        display: "inline",
+                        marginRight: 5,
+                        verticalAlign: "middle",
+                      }}
+                    />
+                    Send Notification
+                  </>
+                )}
               </button>
             </form>
           </SectionCard>

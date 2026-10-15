@@ -1,5 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  TrendingUp,
+  ShieldAlert,
+  Settings2,
+  Bell,
+} from "lucide-react";
 import { PageHeader, GoldButton } from "../../components/portal/PortalUI";
 import { useNotifications } from "../../hooks/usePortalData";
 
@@ -10,12 +18,17 @@ const catColor = {
   Security: "#fbbf24",
   System: "#9ca3af",
 };
-const catIcon = {
-  Deposits: "💰",
-  Withdrawals: "🔴",
-  Investments: "📈",
-  Security: "🔒",
-  System: "⚙️",
+const CatIcon = ({ category, size = 18 }) => {
+  const map = {
+    Deposits: ArrowDownToLine,
+    Withdrawals: ArrowUpFromLine,
+    Investments: TrendingUp,
+    Security: ShieldAlert,
+    System: Settings2,
+  };
+  const Icon = map[category] ?? Bell;
+  const color = catColor[category] ?? "#9ca3af";
+  return <Icon size={size} color={color} />;
 };
 const tabs = [
   "All",
@@ -114,7 +127,22 @@ export default function NotificationsPage() {
                 borderRadius: 16,
               }}
             >
-              <div style={{ fontSize: 40, marginBottom: 16 }}>🔔</div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 16,
+                  width: 64,
+                  height: 64,
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(201,168,76,0.1)",
+                  margin: "0 auto 16px",
+                }}
+              >
+                <Bell size={28} color="rgba(214,222,232,0.3)" />
+              </div>
               <p style={{ fontSize: 15, color: "#D6DEE8", opacity: 0.5 }}>
                 You're all caught up! No new notifications.
               </p>
@@ -171,11 +199,10 @@ export default function NotificationsPage() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 18,
                     flexShrink: 0,
                   }}
                 >
-                  {catIcon[n.category] ?? "🔔"}
+                  <CatIcon category={n.category} size={17} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div

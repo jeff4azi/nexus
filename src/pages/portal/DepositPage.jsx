@@ -7,6 +7,7 @@ import {
   AlertCircle,
   CreditCard,
   FileImage,
+  ShieldCheck,
 } from "lucide-react";
 import {
   SectionCard,
@@ -387,9 +388,13 @@ export default function DepositPage() {
                     color: "#D6DEE8",
                     opacity: 0.4,
                     margin: "8px 0 0",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
                   }}
                 >
-                  🔒 256-bit encrypted · Not stored in plain text
+                  <ShieldCheck size={12} color="#4ade80" />
+                  256-bit encrypted · Not stored in plain text
                 </p>
               </div>
               <GoldButton
@@ -1037,9 +1042,12 @@ export default function DepositPage() {
                           fontSize: 11,
                           color: "#4ade80",
                           marginLeft: 8,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
                         }}
                       >
-                        🔒 SSL Secured
+                        <ShieldCheck size={12} color="#4ade80" /> SSL Secured
                       </span>
                     </div>
 
@@ -1352,8 +1360,17 @@ function ProofUpload({
             >
               {file.name}
             </div>
-            <div style={{ fontSize: 11, color: "#4ade80", marginTop: 3 }}>
-              ✓ Ready to upload
+            <div
+              style={{
+                fontSize: 11,
+                color: "#4ade80",
+                marginTop: 3,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <CheckCircle size={12} color="#4ade80" /> Ready to upload
             </div>
           </div>
           <button

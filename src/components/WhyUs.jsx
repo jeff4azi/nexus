@@ -1,4 +1,5 @@
 import { useReveal } from "../hooks/useReveal";
+import { Check } from "lucide-react";
 
 const features = [
   {
@@ -122,15 +123,7 @@ export default function WhyUs() {
                   marginTop: "2px",
                 }}
               >
-                <span
-                  style={{
-                    color: "#C9A84C",
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                  }}
-                >
-                  ✓
-                </span>
+                <Check size={13} color="#C9A84C" />
               </div>
               <div>
                 <div

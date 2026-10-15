@@ -9,6 +9,9 @@ import {
   ArrowUpFromLine,
   HeadphonesIcon,
   Calendar,
+  ShieldAlert,
+  Settings2,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -41,12 +44,19 @@ const fmtDate = (d) =>
 const daysUntil = (d) =>
   d ? Math.max(0, Math.ceil((new Date(d) - Date.now()) / 86400000)) : null;
 
-const catIcon = {
-  Deposits: "💰",
-  Withdrawals: "🔴",
-  Investments: "📈",
-  Security: "🔒",
-  System: "⚙️",
+const catColor = {
+  Deposits: "#4ade80",
+  Withdrawals: "#f87171",
+  Investments: "#60a5fa",
+  Security: "#fbbf24",
+  System: "#9ca3af",
+};
+const catIconMap = {
+  Deposits: ArrowDownToLine,
+  Withdrawals: ArrowUpFromLine,
+  Investments: TrendingUp,
+  Security: ShieldAlert,
+  System: Settings2,
 };
 
 function PortfolioChart({ investments }) {
@@ -572,9 +582,21 @@ export default function DashboardPage() {
                   )}
                   <div style={{ flex: 1 }}>
                     <div
-                      style={{ fontSize: 13, color: "#fff", marginBottom: 3 }}
+                      style={{
+                        fontSize: 13,
+                        color: "#fff",
+                        marginBottom: 3,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
                     >
-                      {catIcon[n.category] ?? "🔔"} {n.title}
+                      {(() => {
+                        const Icon = catIconMap[n.category] ?? Bell;
+                        const color = catColor[n.category] ?? "#9ca3af";
+                        return <Icon size={13} color={color} />;
+                      })()}
+                      {n.title}
                     </div>
                     <div
                       style={{ fontSize: 11, color: "#D6DEE8", opacity: 0.45 }}

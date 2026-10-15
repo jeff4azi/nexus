@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, AlertCircle, ArrowUpFromLine } from "lucide-react";
+import { CheckCircle, AlertCircle, ArrowUpFromLine, Check } from "lucide-react";
 import {
   SectionCard,
   Badge,
@@ -299,7 +299,7 @@ export default function WithdrawalPage() {
                           border: active ? "2px solid #C9A84C" : "none",
                         }}
                       >
-                        {done ? "✓" : i + 1}
+                        {done ? <Check size={13} color="#0A0E1A" /> : i + 1}
                       </div>
                       <span
                         style={{
@@ -725,17 +725,7 @@ export default function WithdrawalPage() {
                         justifyContent: "center",
                       }}
                     >
-                      {confirmed && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: "#0A0E1A",
-                            fontWeight: 700,
-                          }}
-                        >
-                          ✓
-                        </span>
-                      )}
+                      {confirmed && <Check size={11} color="#0A0E1A" />}
                     </button>
                     <span
                       style={{
