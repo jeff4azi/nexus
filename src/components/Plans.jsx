@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
+import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
 const fadeUp = {
@@ -287,9 +288,12 @@ export default function Plans() {
                   </div>
 
                   {/* CTA */}
-                  <button
+                  <Link
+                    to="/register"
                     style={{
+                      display: "block",
                       width: "100%",
+                      boxSizing: "border-box",
                       background: highlight
                         ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
                         : "transparent",
@@ -304,6 +308,8 @@ export default function Plans() {
                       borderRadius: 10,
                       cursor: "pointer",
                       letterSpacing: 0.5,
+                      textDecoration: "none",
+                      textAlign: "center",
                       transition: "opacity 0.2s",
                     }}
                     onMouseEnter={(e) =>
@@ -312,7 +318,7 @@ export default function Plans() {
                     onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                   >
                     Invest Now
-                  </button>
+                  </Link>
                 </motion.div>
               );
             })}

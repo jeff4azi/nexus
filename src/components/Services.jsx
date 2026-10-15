@@ -1,4 +1,5 @@
 import { useReveal } from "../hooks/useReveal";
+import { Link } from "react-router-dom";
 
 const services = [
   {
@@ -144,7 +145,7 @@ function ServiceCard({ service, delay, visible }) {
         {service.desc}
       </p>
       <a
-        href="#contact"
+        href="/contact"
         style={{
           color: "#C9A84C",
           fontSize: "0.85rem",

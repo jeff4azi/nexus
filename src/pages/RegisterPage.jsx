@@ -763,19 +763,23 @@ export default function RegisterPage() {
                 }}
               >
                 I agree to the{" "}
-                <a
-                  href="#"
+                <Link
+                  to="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   style={{ color: "#C9A84C", textDecoration: "none" }}
                 >
                   Terms of Service
-                </a>{" "}
+                </Link>{" "}
                 and{" "}
-                <a
-                  href="#"
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   style={{ color: "#C9A84C", textDecoration: "none" }}
                 >
                   Privacy Policy
-                </a>
+                </Link>
               </span>
             </motion.div>
 

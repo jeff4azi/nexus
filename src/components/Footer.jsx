@@ -46,8 +46,8 @@ const columns = [
 ];
 
 const socials = [
-  { label: "LinkedIn", href: "#", Icon: LinkedInIcon },
-  { label: "X", href: "#", Icon: XIcon },
+  { label: "LinkedIn", href: "https://linkedin.com", Icon: LinkedInIcon },
+  { label: "X", href: "https://x.com", Icon: XIcon },
 ];
 
 const linkStyle = {
