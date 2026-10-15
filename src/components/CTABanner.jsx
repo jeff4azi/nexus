@@ -1,14 +1,30 @@
 import { useState } from "react";
 import { useReveal } from "../hooks/useReveal";
+import { supabase } from "../lib/supabase";
 
 export default function CTABanner() {
   const { ref, visible } = useReveal();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (email) setSubmitted(true);
+    if (!email) return;
+    setError("");
+    setSubmitting(true);
+    const { error: dbError } = await supabase
+      .from("leads")
+      .insert({ email: email.trim().toLowerCase(), source: "cta_banner" });
+    setSubmitting(false);
+    // Unique constraint means duplicate emails return an error — treat as success
+    // so the user sees confirmation regardless (don't reveal whether they're already in)
+    if (dbError && dbError.code !== "23505") {
+      setError("Something went wrong. Please try again.");
+      return;
+    }
+    setSubmitted(true);
   };
 
   return (
@@ -99,56 +115,76 @@ export default function CTABanner() {
             Thank you — a member of our team will be in touch shortly.
           </div>
         ) : (
-          <form
-            onSubmit={handleSubmit}
-            style={{
-              display: "flex",
-              gap: "0",
-              maxWidth: 500,
-              margin: "0 auto",
-              borderRadius: "6px",
-              overflow: "hidden",
-              border: "1px solid rgba(201,168,76,0.25)",
-            }}
-          >
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email address"
-              required
+          <>
+            <form
+              onSubmit={handleSubmit}
               style={{
-                flex: 1,
-                padding: "0.9rem 1.25rem",
-                background: "rgba(15,20,34,0.8)",
-                border: "none",
-                outline: "none",
-                color: "#D6DEE8",
-                fontSize: "0.9rem",
-                fontFamily: "DM Sans, sans-serif",
+                display: "flex",
+                gap: "0",
+                maxWidth: 500,
+                margin: "0 auto",
+                borderRadius: "6px",
+                overflow: "hidden",
+                border: "1px solid rgba(201,168,76,0.25)",
               }}
-            />
-            <button
-              type="submit"
-              style={{
-                padding: "0.9rem 1.75rem",
-                background: "linear-gradient(135deg, #C9A84C, #E8B84B)",
-                border: "none",
-                color: "#0A0E1A",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                letterSpacing: "0.04em",
-                fontFamily: "DM Sans, sans-serif",
-                transition: "opacity 0.2s",
-                whiteSpace: "nowrap",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.88")}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
-              Get Started
-            </button>
-          </form>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email address"
+                required
+                style={{
+                  flex: 1,
+                  padding: "0.9rem 1.25rem",
+                  background: "rgba(15,20,34,0.8)",
+                  border: "none",
+                  outline: "none",
+                  color: "#D6DEE8",
+                  fontSize: "0.9rem",
+                  fontFamily: "DM Sans, sans-serif",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                style={{
+                  padding: "0.9rem 1.75rem",
+                  background: "linear-gradient(135deg, #C9A84C, #E8B84B)",
+                  border: "none",
+                  color: "#0A0E1A",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  cursor: submitting ? "not-allowed" : "pointer",
+                  letterSpacing: "0.04em",
+                  fontFamily: "DM Sans, sans-serif",
+                  transition: "opacity 0.2s",
+                  whiteSpace: "nowrap",
+                  opacity: submitting ? 0.65 : 1,
+                }}
+                onMouseEnter={(e) =>
+                  !submitting && (e.currentTarget.style.opacity = "0.88")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.opacity = submitting ? "0.65" : "1")
+                }
+              >
+                {submitting ? "Saving…" : "Get Started"}
+              </button>
+            </form>
+            {error && (
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "#f87171",
+                  margin: "10px 0 0",
+                  fontFamily: "DM Sans, sans-serif",
+                }}
+              >
+                {error}
+              </p>
+            )}
+          </>
         )}
       </div>
     </section>

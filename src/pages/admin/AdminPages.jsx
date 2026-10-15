@@ -517,12 +517,27 @@ export function OverviewPage() {
         .order("created_at", { ascending: true }),
   });
   const [clientCount, setClientCount] = useState(0);
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const [pendingBkCount, setPendingBkCount] = useState(0);
+
   useEffect(() => {
     supabase
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("role", "user")
       .then(({ count }) => setClientCount(count ?? 0));
+
+    supabase
+      .from("contact_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "New")
+      .then(({ count }) => setNewMsgCount(count ?? 0));
+
+    supabase
+      .from("consultation_bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "Pending")
+      .then(({ count }) => setPendingBkCount(count ?? 0));
   }, []);
   const [dialog, setDialog] = useState(null);
   const [queues, setQueues] = useState({ d: [], w: [] });
@@ -552,7 +567,7 @@ export function OverviewPage() {
         className="admin-kpis"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3,1fr)",
+          gridTemplateColumns: "repeat(5, 1fr)",
           gap: 14,
         }}
       >
@@ -561,19 +576,34 @@ export function OverviewPage() {
           value={dep.data.length}
           sub="Awaiting proof review"
           icon={Landmark}
-          accent
+          accent={dep.data.length > 0}
         />
         <KPICard
           label="Payment actions"
           value={wit.data.length}
           sub="Pending or in processing"
           icon={Send}
+          accent={wit.data.length > 0}
         />
         <KPICard
           label="Client accounts"
           value={clientCount}
           sub="All registered profiles"
           icon={Users}
+        />
+        <KPICard
+          label="Unread messages"
+          value={newMsgCount}
+          sub="Contact form submissions"
+          icon={Users}
+          accent={newMsgCount > 0}
+        />
+        <KPICard
+          label="Pending bookings"
+          value={pendingBkCount}
+          sub="Consultation requests"
+          icon={Users}
+          accent={pendingBkCount > 0}
         />
       </div>
       <div
@@ -1375,7 +1405,11 @@ function Title({ eyebrow, title, action }) {
 }
 function Responsive() {
   return (
-    <style>{`@media(max-width:900px){.admin-grid{grid-template-columns:1fr!important}.admin-kpis{grid-template-columns:1fr!important}}`}</style>
+    <style>{`
+      @media(max-width:1200px){.admin-kpis{grid-template-columns:repeat(3,1fr)!important}}
+      @media(max-width:900px){.admin-grid{grid-template-columns:1fr!important}.admin-kpis{grid-template-columns:repeat(2,1fr)!important}}
+      @media(max-width:560px){.admin-kpis{grid-template-columns:1fr!important}}
+    `}</style>
   );
 }
 
@@ -2458,6 +2492,686 @@ export function AdminNotificationsPage() {
           </SectionCard>
         )}
       </div>
+      <Responsive />
+    </>
+  );
+}
+
+export function MessagesPage() {
+  const [tab, setTab] = useState("messages");
+
+  const {
+    data: messages,
+    loading: msgLoading,
+    error: msgError,
+    reload: reloadMsgs,
+  } = useAdminData("contact_messages", {
+    filter: (q) => q.order("created_at", { ascending: false }),
+  });
+
+  const {
+    data: bookings,
+    loading: bkLoading,
+    error: bkError,
+    reload: reloadBks,
+  } = useAdminData("consultation_bookings", {
+    filter: (q) => q.order("created_at", { ascending: false }),
+  });
+
+  const {
+    data: leads,
+    loading: leadsLoading,
+    error: leadsError,
+    reload: reloadLeads,
+  } = useAdminData("leads", {
+    filter: (q) => q.order("created_at", { ascending: false }),
+  });
+
+  const [selected, setSelected] = useState(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const newMsgCount = messages.filter((m) => m.status === "New").length;
+  const pendingBkCount = bookings.filter((b) => b.status === "Pending").length;
+
+  async function updateMessageStatus(id, status) {
+    setSaving(true);
+    await supabase
+      .from("contact_messages")
+      .update({ status, admin_note: note || null })
+      .eq("id", id);
+    setSaving(false);
+    setSelected(null);
+    setNote("");
+    reloadMsgs();
+  }
+
+  async function updateBookingStatus(id, status) {
+    setSaving(true);
+    await supabase
+      .from("consultation_bookings")
+      .update({ status, admin_note: note || null })
+      .eq("id", id);
+    setSaving(false);
+    setSelected(null);
+    setNote("");
+    reloadBks();
+  }
+
+  const statusTone = {
+    New: "amber",
+    Read: "blue",
+    Replied: "green",
+    Pending: "amber",
+    Confirmed: "green",
+    Cancelled: "red",
+  };
+
+  const inputStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    marginTop: 5,
+    padding: "10px 12px",
+    background: "#0a101b",
+    border: "1px solid rgba(201,168,76,.2)",
+    borderRadius: 7,
+    color: "#fff",
+    fontFamily: "DM Sans, sans-serif",
+    fontSize: 13,
+    outline: "none",
+  };
+
+  return (
+    <>
+      <Title
+        eyebrow="INBOX"
+        title="Messages & Bookings"
+        action={
+          <button
+            onClick={() => {
+              reloadMsgs();
+              reloadBks();
+              reloadLeads();
+            }}
+            style={button()}
+          >
+            <RefreshCw size={13} /> Refresh
+          </button>
+        }
+      />
+
+      {/* KPI strip */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 14,
+          marginBottom: 24,
+        }}
+        className="admin-kpis"
+      >
+        <KPICard
+          label="Unread messages"
+          value={newMsgCount}
+          sub="Awaiting review"
+          icon={Users}
+          accent={newMsgCount > 0}
+        />
+        <KPICard
+          label="Pending consultations"
+          value={pendingBkCount}
+          sub="Awaiting confirmation"
+          icon={Users}
+          accent={pendingBkCount > 0}
+        />
+        <KPICard
+          label="Leads captured"
+          value={leads.length}
+          sub="CTA email signups"
+          icon={Users}
+        />
+      </div>
+
+      {/* Tabs */}
+      <div
+        style={{
+          display: "flex",
+          background: "rgba(255,255,255,.03)",
+          border: "1px solid rgba(201,168,76,.12)",
+          borderRadius: 12,
+          padding: 5,
+          marginBottom: 24,
+          width: "fit-content",
+        }}
+      >
+        {[
+          ["messages", `Messages${newMsgCount > 0 ? ` (${newMsgCount})` : ""}`],
+          [
+            "bookings",
+            `Bookings${pendingBkCount > 0 ? ` (${pendingBkCount})` : ""}`,
+          ],
+          ["leads", "Leads"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            style={{
+              padding: "10px 22px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "DM Sans, sans-serif",
+              background:
+                tab === id
+                  ? "linear-gradient(135deg, #C9A84C, #E8B84B)"
+                  : "transparent",
+              color: tab === id ? "#0A0E1A" : "#D6DEE8",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Messages tab */}
+      {tab === "messages" && (
+        <SectionCard
+          title={`${messages.length} contact message${messages.length !== 1 ? "s" : ""}`}
+        >
+          <State loading={msgLoading} error={msgError} empty={!messages.length}>
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <thead>
+                  <tr>
+                    {["Name", "Email", "Subject", "Received", "Status", ""].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          style={{
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            color: "#8290a2",
+                            fontSize: 10,
+                            letterSpacing: 1,
+                            borderBottom: "1px solid rgba(201,168,76,.12)",
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {messages.map((m) => (
+                    <tr
+                      key={m.id}
+                      style={{
+                        borderBottom: "1px solid rgba(255,255,255,.05)",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,.02)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = "transparent")
+                      }
+                    >
+                      <td
+                        style={{ padding: 12, color: "#fff", fontWeight: 600 }}
+                      >
+                        {m.name}
+                      </td>
+                      <td
+                        style={{ padding: 12, color: "#9ba7b7", fontSize: 12 }}
+                      >
+                        {m.email}
+                      </td>
+                      <td
+                        style={{ padding: 12, color: "#D6DEE8", opacity: 0.8 }}
+                      >
+                        {m.subject || "—"}
+                      </td>
+                      <td
+                        style={{
+                          padding: 12,
+                          color: "#9ba7b7",
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {date(m.created_at)}
+                      </td>
+                      <td style={{ padding: 12 }}>
+                        <Badge
+                          label={m.status}
+                          color={statusTone[m.status] ?? "grey"}
+                        />
+                      </td>
+                      <td style={{ padding: 12 }}>
+                        <button
+                          onClick={() => {
+                            setSelected({ type: "message", data: m });
+                            setNote(m.admin_note || "");
+                          }}
+                          style={button()}
+                        >
+                          <Eye
+                            size={13}
+                            style={{ verticalAlign: "middle", marginRight: 4 }}
+                          />{" "}
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </State>
+        </SectionCard>
+      )}
+
+      {/* Bookings tab */}
+      {tab === "bookings" && (
+        <SectionCard
+          title={`${bookings.length} consultation booking${bookings.length !== 1 ? "s" : ""}`}
+        >
+          <State loading={bkLoading} error={bkError} empty={!bookings.length}>
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <thead>
+                  <tr>
+                    {[
+                      "Name",
+                      "Email",
+                      "Date",
+                      "Time",
+                      "Topic",
+                      "Submitted",
+                      "Status",
+                      "",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          color: "#8290a2",
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          borderBottom: "1px solid rgba(201,168,76,.12)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b) => (
+                    <tr
+                      key={b.id}
+                      style={{
+                        borderBottom: "1px solid rgba(255,255,255,.05)",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,.02)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = "transparent")
+                      }
+                    >
+                      <td
+                        style={{ padding: 12, color: "#fff", fontWeight: 600 }}
+                      >
+                        {b.name}
+                      </td>
+                      <td
+                        style={{ padding: 12, color: "#9ba7b7", fontSize: 12 }}
+                      >
+                        {b.email}
+                      </td>
+                      <td
+                        style={{
+                          padding: 12,
+                          color: "#D6DEE8",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {b.preferred_date}
+                      </td>
+                      <td style={{ padding: 12, color: "#D6DEE8" }}>
+                        {b.preferred_time}
+                      </td>
+                      <td
+                        style={{ padding: 12, color: "#D6DEE8", opacity: 0.8 }}
+                      >
+                        {b.topic || "—"}
+                      </td>
+                      <td
+                        style={{
+                          padding: 12,
+                          color: "#9ba7b7",
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {date(b.created_at)}
+                      </td>
+                      <td style={{ padding: 12 }}>
+                        <Badge
+                          label={b.status}
+                          color={statusTone[b.status] ?? "grey"}
+                        />
+                      </td>
+                      <td style={{ padding: 12 }}>
+                        <button
+                          onClick={() => {
+                            setSelected({ type: "booking", data: b });
+                            setNote(b.admin_note || "");
+                          }}
+                          style={button()}
+                        >
+                          <Eye
+                            size={13}
+                            style={{ verticalAlign: "middle", marginRight: 4 }}
+                          />{" "}
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </State>
+        </SectionCard>
+      )}
+
+      {/* Leads tab */}
+      {tab === "leads" && (
+        <SectionCard
+          title={`${leads.length} lead${leads.length !== 1 ? "s" : ""} captured`}
+        >
+          <State
+            loading={leadsLoading}
+            error={leadsError}
+            empty={!leads.length}
+          >
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                }}
+              >
+                <thead>
+                  <tr>
+                    {["Email", "Source", "Captured"].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          color: "#8290a2",
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          borderBottom: "1px solid rgba(201,168,76,.12)",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((l) => (
+                    <tr
+                      key={l.id}
+                      style={{
+                        borderBottom: "1px solid rgba(255,255,255,.05)",
+                      }}
+                    >
+                      <td style={{ padding: 12, color: "#fff" }}>{l.email}</td>
+                      <td style={{ padding: 12 }}>
+                        <Badge label={l.source} color="gold" />
+                      </td>
+                      <td
+                        style={{ padding: 12, color: "#9ba7b7", fontSize: 12 }}
+                      >
+                        {date(l.created_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </State>
+        </SectionCard>
+      )}
+
+      {/* Detail drawer */}
+      {selected && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 70,
+            background: "rgba(0,0,0,.65)",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <aside
+            style={{
+              width: "min(520px,100%)",
+              background: "#101828",
+              padding: 28,
+              overflow: "auto",
+              boxSizing: "border-box",
+            }}
+          >
+            <button
+              onClick={() => {
+                setSelected(null);
+                setNote("");
+              }}
+              style={{
+                float: "right",
+                background: "none",
+                border: 0,
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <X />
+            </button>
+
+            <div
+              style={{
+                color: "#C9A84C",
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: 1.4,
+              }}
+            >
+              {selected.type === "message"
+                ? "CONTACT MESSAGE"
+                : "CONSULTATION BOOKING"}
+            </div>
+            <h2
+              style={{
+                color: "#fff",
+                fontFamily: "Cormorant Garamond,serif",
+                fontSize: 28,
+                margin: "8px 0 20px",
+              }}
+            >
+              {selected.data.name}
+            </h2>
+
+            {selected.type === "message" && (
+              <>
+                <Record label="Email" value={selected.data.email} />
+                <Record
+                  label="Subject"
+                  value={selected.data.subject || "No subject"}
+                />
+                <Record
+                  label="Received"
+                  value={date(selected.data.created_at)}
+                />
+                <div style={{ marginTop: 16, marginBottom: 20 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#8390a3",
+                      letterSpacing: 1,
+                      marginBottom: 8,
+                    }}
+                  >
+                    MESSAGE
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 14,
+                      color: "#dce4ed",
+                      lineHeight: 1.75,
+                      background: "rgba(255,255,255,.03)",
+                      border: "1px solid rgba(201,168,76,.1)",
+                      borderRadius: 8,
+                      padding: "14px 16px",
+                      margin: 0,
+                    }}
+                  >
+                    {selected.data.message}
+                  </p>
+                </div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "#b7c2d0",
+                    display: "block",
+                    marginBottom: 16,
+                  }}
+                >
+                  Internal note (optional)
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={3}
+                    style={{ ...inputStyle, resize: "vertical" }}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["Read", "Replied"].map((s) => (
+                    <button
+                      key={s}
+                      disabled={saving || selected.data.status === s}
+                      onClick={() => updateMessageStatus(selected.data.id, s)}
+                      style={{
+                        ...button(),
+                        opacity: selected.data.status === s ? 0.4 : 1,
+                      }}
+                    >
+                      {saving ? "Saving…" : `Mark ${s}`}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {selected.type === "booking" && (
+              <>
+                <Record label="Email" value={selected.data.email} />
+                <Record
+                  label="Phone"
+                  value={selected.data.phone || "Not provided"}
+                />
+                <Record
+                  label="Preferred date"
+                  value={selected.data.preferred_date}
+                />
+                <Record
+                  label="Preferred time"
+                  value={selected.data.preferred_time}
+                />
+                <Record
+                  label="Topic"
+                  value={selected.data.topic || "Not specified"}
+                />
+                <Record
+                  label="Submitted"
+                  value={date(selected.data.created_at)}
+                />
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "#b7c2d0",
+                    display: "block",
+                    marginTop: 16,
+                    marginBottom: 16,
+                  }}
+                >
+                  Internal note (optional)
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={3}
+                    style={{ ...inputStyle, resize: "vertical" }}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    disabled={saving || selected.data.status === "Confirmed"}
+                    onClick={() =>
+                      updateBookingStatus(selected.data.id, "Confirmed")
+                    }
+                    style={{
+                      ...button(),
+                      opacity: selected.data.status === "Confirmed" ? 0.4 : 1,
+                    }}
+                  >
+                    {saving ? "Saving…" : "Confirm"}
+                  </button>
+                  <button
+                    disabled={saving || selected.data.status === "Cancelled"}
+                    onClick={() =>
+                      updateBookingStatus(selected.data.id, "Cancelled")
+                    }
+                    style={{
+                      ...button("danger"),
+                      opacity: selected.data.status === "Cancelled" ? 0.4 : 1,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
+
       <Responsive />
     </>
   );

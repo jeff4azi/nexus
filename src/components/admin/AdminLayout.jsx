@@ -10,6 +10,7 @@ import {
   UserCog,
   TrendingUp,
   Bell,
+  MessageSquare,
   LogOut,
   Menu,
   X,
@@ -31,6 +32,7 @@ export default function AdminLayout({ children }) {
     ["Deposit review", "/admin/deposits", Landmark],
     ["Payment approvals", "/admin/withdrawals", Send],
     ["Funding destinations", "/admin/funding", WalletCards],
+    ["Messages & Bookings", "/admin/messages", MessageSquare],
     ["Notifications", "/admin/notifications", Bell],
   ];
   const superItems = [["Admin accounts", "/admin/accounts", UserCog]];

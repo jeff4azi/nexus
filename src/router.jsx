@@ -41,6 +41,7 @@ import {
   AdminAccountsPage,
   InvestmentsPage,
   AdminNotificationsPage,
+  MessagesPage,
 } from "./pages/admin/AdminPages";
 
 function Portal({ children }) {
@@ -137,6 +138,14 @@ const router = createBrowserRouter([
     element: (
       <Admin>
         <AdminNotificationsPage />
+      </Admin>
+    ),
+  },
+  {
+    path: "/admin/messages",
+    element: (
+      <Admin>
+        <MessagesPage />
       </Admin>
     ),
   },

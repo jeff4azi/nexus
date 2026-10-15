@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Clock, Send, Calendar } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { supabase } from "../lib/supabase";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 40 },
@@ -15,7 +16,7 @@ const stagger = {
 };
 
 const contactInfo = [
-  { icon: Mail, label: "Email Us", value: "support@nexusyieldgroup.com" },
+  { icon: Mail, label: "Email Us", value: "support@nexusyield.org" },
   { icon: Phone, label: "Call Us", value: "+1 (800) 123-4567" },
   {
     icon: MapPin,
@@ -133,12 +134,27 @@ function ContactForm() {
     message: "",
   });
   const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const set = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setSubmitting(true);
+    const { error: dbError } = await supabase.from("contact_messages").insert({
+      name: form.name.trim(),
+      email: form.email.trim().toLowerCase(),
+      subject: form.subject.trim() || null,
+      message: form.message.trim(),
+    });
+    setSubmitting(false);
+    if (dbError) {
+      setError("Failed to send your message. Please try again.");
+      return;
+    }
     setSent(true);
   };
 
@@ -221,8 +237,12 @@ function ContactForm() {
         value={form.message}
         onChange={set("message")}
       />
+      {error && (
+        <p style={{ fontSize: 13, color: "#f87171", margin: 0 }}>{error}</p>
+      )}
       <button
         type="submit"
+        disabled={submitting}
         style={{
           background: "linear-gradient(135deg, #C9A84C, #E8B84B)",
           color: "#0A0E1A",
@@ -232,17 +252,22 @@ function ContactForm() {
           padding: "16px",
           borderRadius: 8,
           border: "none",
-          cursor: "pointer",
+          cursor: submitting ? "not-allowed" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
           transition: "opacity 0.2s",
+          opacity: submitting ? 0.65 : 1,
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.88")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        onMouseEnter={(e) =>
+          !submitting && (e.currentTarget.style.opacity = "0.88")
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.opacity = submitting ? "0.65" : "1")
+        }
       >
-        <Send size={16} /> Send Message
+        <Send size={16} /> {submitting ? "Sending…" : "Send Message"}
       </button>
     </form>
   );
@@ -258,12 +283,35 @@ function BookingForm() {
     topic: "",
   });
   const [booked, setBooked] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const set = (field) => (e) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.time) {
+      setError("Please select a preferred time slot.");
+      return;
+    }
+    setError("");
+    setSubmitting(true);
+    const { error: dbError } = await supabase
+      .from("consultation_bookings")
+      .insert({
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim() || null,
+        preferred_date: form.date,
+        preferred_time: form.time,
+        topic: form.topic || null,
+      });
+    setSubmitting(false);
+    if (dbError) {
+      setError("Failed to book your consultation. Please try again.");
+      return;
+    }
     setBooked(true);
   };
 
@@ -444,8 +492,12 @@ function BookingForm() {
         </select>
       </div>
 
+      {error && (
+        <p style={{ fontSize: 13, color: "#f87171", margin: 0 }}>{error}</p>
+      )}
       <button
         type="submit"
+        disabled={submitting}
         style={{
           background: "linear-gradient(135deg, #C9A84C, #E8B84B)",
           color: "#0A0E1A",
@@ -455,17 +507,22 @@ function BookingForm() {
           padding: "16px",
           borderRadius: 8,
           border: "none",
-          cursor: "pointer",
+          cursor: submitting ? "not-allowed" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
           transition: "opacity 0.2s",
+          opacity: submitting ? 0.65 : 1,
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.88")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        onMouseEnter={(e) =>
+          !submitting && (e.currentTarget.style.opacity = "0.88")
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.opacity = submitting ? "0.65" : "1")
+        }
       >
-        <Calendar size={16} /> Book Consultation
+        <Calendar size={16} /> {submitting ? "Booking…" : "Book Consultation"}
       </button>
     </form>
   );
