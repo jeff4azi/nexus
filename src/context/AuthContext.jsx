@@ -159,6 +159,9 @@ export function AuthProvider({ children }) {
             })
           : "—",
         kycStatus: profile.kyc_status || "Unverified",
+        ssnVerificationStatus:
+          profile.ssn_verification_status || "Not provided",
+        hasTransactionPin: !!profile.transaction_pin_hash,
         riskProfile: profile.risk_profile || "Balanced",
         avatarUrl: profile.avatar_url || null,
         phone: profile.phone || "",

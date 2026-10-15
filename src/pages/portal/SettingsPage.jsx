@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Eye, EyeOff, Check, Upload, Plus, Trash2 } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Check,
+  Upload,
+  Plus,
+  Trash2,
+  KeyRound,
+  AlertCircle,
+} from "lucide-react";
 import {
   SectionCard,
   Badge,
@@ -8,6 +17,7 @@ import {
 } from "../../components/portal/PortalUI";
 import { useAuth } from "../../context/AuthContext";
 import { useCryptoWallets, useLoginSessions } from "../../hooks/usePortalData";
+import { supabase } from "../../lib/supabase";
 
 const tabs = [
   "Personal Info",
@@ -112,7 +122,7 @@ function Field({ label, value, onChange, readOnly, type = "text", hint }) {
 }
 
 export default function SettingsPage() {
-  const { user, updateProfile } = useAuth();
+  const { user, profile, updateProfile } = useAuth();
   const { sessions, loading: sessionsLoading } = useLoginSessions();
   const {
     wallets,
@@ -143,7 +153,23 @@ export default function SettingsPage() {
     new: false,
     confirm: false,
   });
-  const [twoFA, setTwoFA] = useState(false);
+
+  // Transaction PIN state
+  const hasPin = !!profile?.transaction_pin_hash;
+  const [pinForm, setPinForm] = useState({
+    oldPin: "",
+    newPin: "",
+    confirmPin: "",
+  });
+  const [showPinFields, setShowPinFields] = useState({
+    old: false,
+    new: false,
+    confirm: false,
+  });
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const [pinSaved, setPinSaved] = useState(false);
+
   const [saved, setSaved] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState({
     depositEmail: true,
@@ -167,6 +193,7 @@ export default function SettingsPage() {
   });
 
   const set = (f) => (v) => setForm((p) => ({ ...p, [f]: v }));
+
   const handleSave = async () => {
     const { error } = await updateProfile({
       first_name: form.firstName.trim(),
@@ -182,6 +209,41 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
+
+  async function handlePinSave(e) {
+    e.preventDefault();
+    setPinError("");
+    if (!/^\d{4}$/.test(pinForm.newPin)) {
+      setPinError("New PIN must be exactly 4 digits.");
+      return;
+    }
+    if (pinForm.newPin !== pinForm.confirmPin) {
+      setPinError("PINs do not match.");
+      return;
+    }
+    if (hasPin && !pinForm.oldPin) {
+      setPinError("Please enter your current PIN.");
+      return;
+    }
+    setPinLoading(true);
+    const { error } = await supabase.rpc("set_transaction_pin", {
+      p_new_pin: pinForm.newPin,
+      p_old_pin: hasPin ? pinForm.oldPin : null,
+    });
+    setPinLoading(false);
+    if (error) {
+      const msg = error.message ?? "";
+      if (msg.toLowerCase().includes("incorrect")) {
+        setPinError("Current PIN is incorrect.");
+      } else {
+        setPinError(msg || "Could not update PIN. Please try again.");
+      }
+      return;
+    }
+    setPinForm({ oldPin: "", newPin: "", confirmPin: "" });
+    setPinSaved(true);
+    setTimeout(() => setPinSaved(false), 3000);
+  }
 
   async function handleAddWallet() {
     if (!newWallet.wallet_address.trim()) return;
@@ -530,63 +592,316 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Two-Factor Authentication (2FA)">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: 16,
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    marginBottom: 6,
-                  }}
-                >
-                  <span
-                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.8 }}
-                  >
-                    Status:
-                  </span>
-                  <Badge
-                    label={twoFA ? "Enabled" : "Disabled"}
-                    color={twoFA ? "green" : "grey"}
-                  />
-                </div>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "#D6DEE8",
-                    opacity: 0.5,
-                    margin: 0,
-                  }}
-                >
-                  Protect your account with an authenticator app or SMS OTP.
-                </p>
-              </div>
-              <Toggle on={twoFA} onChange={setTwoFA} />
-            </div>
-          </SectionCard>
-
           <SectionCard title="Transaction PIN">
             <p
               style={{
                 fontSize: 13,
                 color: "#D6DEE8",
                 opacity: 0.65,
-                marginBottom: 16,
+                marginBottom: 20,
+                lineHeight: 1.6,
               }}
             >
-              Your 4-digit PIN is used to confirm withdrawals and sensitive
-              actions.
+              Your 4-digit PIN is required to authorise every withdrawal
+              request.{" "}
+              {hasPin
+                ? "Change it below."
+                : "Set one up to enable withdrawals."}
             </p>
-            <GoldButton variant="outline">Change Transaction PIN</GoldButton>
+
+            {pinSaved && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "12px 16px",
+                  background: "rgba(74,222,128,0.08)",
+                  border: "1px solid rgba(74,222,128,0.25)",
+                  borderRadius: 10,
+                  marginBottom: 20,
+                }}
+              >
+                <Check size={15} color="#4ade80" />
+                <span style={{ fontSize: 13, color: "#4ade80" }}>
+                  Transaction PIN {hasPin ? "updated" : "set"} successfully.
+                </span>
+              </div>
+            )}
+
+            {pinError && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: "12px 16px",
+                  background: "rgba(248,113,113,0.08)",
+                  border: "1px solid rgba(248,113,113,0.25)",
+                  borderRadius: 10,
+                  marginBottom: 20,
+                }}
+              >
+                <AlertCircle
+                  size={15}
+                  color="#f87171"
+                  style={{ flexShrink: 0, marginTop: 1 }}
+                />
+                <span style={{ fontSize: 13, color: "#f87171" }}>
+                  {pinError}
+                </span>
+              </div>
+            )}
+
+            <form
+              onSubmit={handlePinSave}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                maxWidth: 340,
+              }}
+            >
+              {hasPin && (
+                <div>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#D6DEE8",
+                      opacity: 0.65,
+                      display: "block",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Current PIN
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPinFields.old ? "text" : "password"}
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="••••"
+                      value={pinForm.oldPin}
+                      onChange={(e) =>
+                        setPinForm((p) => ({
+                          ...p,
+                          oldPin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                        }))
+                      }
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(201,168,76,0.2)",
+                        borderRadius: 8,
+                        padding: "12px 44px 12px 14px",
+                        color: "#fff",
+                        fontSize: 20,
+                        letterSpacing: 6,
+                        outline: "none",
+                        fontFamily: "DM Sans, sans-serif",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPinFields((p) => ({ ...p, old: !p.old }))
+                      }
+                      style={{
+                        position: "absolute",
+                        right: 12,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#C9A84C",
+                        display: "flex",
+                      }}
+                    >
+                      {showPinFields.old ? (
+                        <EyeOff size={16} />
+                      ) : (
+                        <Eye size={16} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#D6DEE8",
+                    opacity: 0.65,
+                    display: "block",
+                    marginBottom: 6,
+                  }}
+                >
+                  {hasPin ? "New PIN" : "Set PIN"}
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showPinFields.new ? "text" : "password"}
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="••••"
+                    value={pinForm.newPin}
+                    onChange={(e) =>
+                      setPinForm((p) => ({
+                        ...p,
+                        newPin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                      }))
+                    }
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(201,168,76,0.2)",
+                      borderRadius: 8,
+                      padding: "12px 44px 12px 14px",
+                      color: "#fff",
+                      fontSize: 20,
+                      letterSpacing: 6,
+                      outline: "none",
+                      fontFamily: "DM Sans, sans-serif",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPinFields((p) => ({ ...p, new: !p.new }))
+                    }
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#C9A84C",
+                      display: "flex",
+                    }}
+                  >
+                    {showPinFields.new ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#D6DEE8",
+                    opacity: 0.65,
+                    display: "block",
+                    marginBottom: 6,
+                  }}
+                >
+                  Confirm PIN
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showPinFields.confirm ? "text" : "password"}
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="••••"
+                    value={pinForm.confirmPin}
+                    onChange={(e) =>
+                      setPinForm((p) => ({
+                        ...p,
+                        confirmPin: e.target.value
+                          .replace(/\D/g, "")
+                          .slice(0, 4),
+                      }))
+                    }
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(201,168,76,0.2)",
+                      borderRadius: 8,
+                      padding: "12px 44px 12px 14px",
+                      color: "#fff",
+                      fontSize: 20,
+                      letterSpacing: 6,
+                      outline: "none",
+                      fontFamily: "DM Sans, sans-serif",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPinFields((p) => ({ ...p, confirm: !p.confirm }))
+                    }
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#C9A84C",
+                      display: "flex",
+                    }}
+                  >
+                    {showPinFields.confirm ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+                </div>
+                {pinForm.confirmPin &&
+                  pinForm.newPin !== pinForm.confirmPin && (
+                    <p
+                      style={{
+                        fontSize: 11,
+                        color: "#f87171",
+                        margin: "5px 0 0",
+                      }}
+                    >
+                      PINs do not match
+                    </p>
+                  )}
+              </div>
+
+              <GoldButton
+                type="submit"
+                disabled={
+                  pinLoading ||
+                  pinForm.newPin.length < 4 ||
+                  pinForm.confirmPin.length < 4 ||
+                  (hasPin && pinForm.oldPin.length < 4)
+                }
+                style={{
+                  alignSelf: "flex-start",
+                  opacity:
+                    pinLoading ||
+                    pinForm.newPin.length < 4 ||
+                    pinForm.confirmPin.length < 4 ||
+                    (hasPin && pinForm.oldPin.length < 4)
+                      ? 0.55
+                      : 1,
+                }}
+              >
+                <KeyRound size={14} />
+                {pinLoading
+                  ? "Saving…"
+                  : hasPin
+                    ? "Update PIN"
+                    : "Set Transaction PIN"}
+              </GoldButton>
+            </form>
           </SectionCard>
 
           <SectionCard title="Login Activity">
@@ -801,10 +1116,6 @@ export default function SettingsPage() {
           <SectionCard title="Display Preferences">
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {[
-                {
-                  label: "Currency Display",
-                  options: ["USD", "GBP", "EUR", "NGN"],
-                },
                 { label: "Theme", options: ["Dark"] },
                 { label: "Language", options: ["English"] },
               ].map((pref) => (

@@ -131,7 +131,7 @@ const labelStyle = {
 };
 
 export default function DepositPage() {
-  const { session, profile } = useAuth();
+  const { session, profile, user, updateProfile, refreshProfile } = useAuth();
   const { deposits, loading: depLoading } = useDeposits();
 
   // Balance comes directly from the profile row (set by admin_review_deposit)
@@ -141,6 +141,16 @@ export default function DepositPage() {
     .filter((d) => d.status === "Approved")
     .reduce((s, d) => s + Number(d.amount), 0);
 
+  // ── SSN gate ──
+  const isVerified =
+    profile?.ssn_verification_status === "Verified" ||
+    profile?.ssn_verification_status === "Pending";
+  const [ssnInput, setSsnInput] = useState("");
+  const [ssnLoading, setSsnLoading] = useState(false);
+  const [ssnError, setSsnError] = useState("");
+  const [ssnSubmitted, setSsnSubmitted] = useState(false);
+
+  // ── Deposit form state (always declared — rules of hooks) ──
   const [tab, setTab] = useState("crypto");
   const [cryptoDestinations, setCryptoDestinations] = useState([]);
   const [crypto, setCrypto] = useState(null);
@@ -168,6 +178,7 @@ export default function DepositPage() {
   const brand = detectBrand(cardNumber);
 
   useEffect(() => {
+    if (!isVerified) return; // don't bother fetching until verified
     supabase
       .from("funding_destinations")
       .select("id, label, asset, network, wallet_address")
@@ -179,7 +190,224 @@ export default function DepositPage() {
         setCryptoDestinations(destinations);
         if (destinations.length > 0) setCrypto(destinations[0]);
       });
-  }, []);
+  }, [isVerified]);
+
+  async function handleSsnSubmit(e) {
+    e.preventDefault();
+    const clean = ssnInput.trim();
+    if (!/^\d{4}$/.test(clean)) {
+      setSsnError("Please enter exactly 4 digits.");
+      return;
+    }
+    setSsnError("");
+    setSsnLoading(true);
+    const { error } = await updateProfile({
+      first_name: profile?.first_name,
+      last_name: profile?.last_name,
+      phone: profile?.phone ?? null,
+      date_of_birth: profile?.date_of_birth ?? null,
+      country: profile?.country ?? null,
+      city: profile?.city ?? null,
+      address: profile?.address ?? null,
+      ssn_last4: clean,
+    });
+    setSsnLoading(false);
+    if (error) {
+      setSsnError("Could not save your SSN. Please try again.");
+      return;
+    }
+    await refreshProfile();
+    setSsnSubmitted(true);
+  }
+
+  // If not verified and SSN just submitted, show "under review" screen
+  if (!isVerified && ssnSubmitted) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "60vh",
+        }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          style={{ textAlign: "center", maxWidth: 440 }}
+        >
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: "50%",
+              background: "rgba(201,168,76,0.15)",
+              border: "1px solid rgba(201,168,76,0.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 24px",
+            }}
+          >
+            <CheckCircle size={36} color="#C9A84C" />
+          </div>
+          <h2
+            style={{
+              fontFamily: "Cormorant Garamond, serif",
+              fontSize: 30,
+              fontWeight: 700,
+              color: "#fff",
+              marginBottom: 12,
+            }}
+          >
+            Identity Verification Submitted
+          </h2>
+          <p
+            style={{
+              fontSize: 14,
+              color: "#D6DEE8",
+              opacity: 0.7,
+              lineHeight: 1.7,
+              marginBottom: 28,
+            }}
+          >
+            Your SSN has been submitted for review. Our compliance team
+            typically verifies identities within a few hours. You'll receive a
+            notification once approved and can return here to make deposits.
+          </p>
+          <a href="/portal/dashboard">
+            <GoldButton>Return to Dashboard</GoldButton>
+          </a>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // If not verified (no SSN on file or rejected), show SSN collection gate
+  if (!isVerified) {
+    return (
+      <div>
+        <PageHeader
+          title="Identity Verification Required"
+          subtitle="To make a deposit you must first verify your identity."
+        />
+        <div style={{ maxWidth: 520, margin: "0 auto" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              padding: "14px 18px",
+              background: "rgba(201,168,76,0.07)",
+              border: "1px solid rgba(201,168,76,0.25)",
+              borderRadius: 10,
+              marginBottom: 28,
+            }}
+          >
+            <AlertCircle
+              size={16}
+              color="#C9A84C"
+              style={{ flexShrink: 0, marginTop: 1 }}
+            />
+            <span
+              style={{
+                fontSize: 13,
+                color: "#D6DEE8",
+                opacity: 0.85,
+                lineHeight: 1.6,
+              }}
+            >
+              Federal regulations require identity verification before you can
+              fund your account. This is a one-time step.
+            </span>
+          </div>
+          <SectionCard title="Verify Your Identity">
+            <p
+              style={{
+                fontSize: 14,
+                color: "#D6DEE8",
+                opacity: 0.7,
+                marginBottom: 24,
+                lineHeight: 1.7,
+              }}
+            >
+              Please provide the last 4 digits of your Social Security Number
+              (SSN). This information is encrypted and used solely for identity
+              verification — we never store your full SSN.
+            </p>
+            <form
+              onSubmit={handleSsnSubmit}
+              style={{ display: "flex", flexDirection: "column", gap: 20 }}
+            >
+              <div>
+                <label
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#D6DEE8",
+                    opacity: 0.8,
+                    display: "block",
+                    marginBottom: 8,
+                  }}
+                >
+                  Last 4 digits of SSN{" "}
+                  <span style={{ color: "#C9A84C" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="••••"
+                  value={ssnInput}
+                  onChange={(e) => {
+                    setSsnInput(e.target.value.replace(/\D/g, "").slice(0, 4));
+                    setSsnError("");
+                  }}
+                  style={{
+                    ...inputStyle,
+                    fontSize: 22,
+                    letterSpacing: 8,
+                    fontWeight: 700,
+                    textAlign: "center",
+                  }}
+                />
+                {ssnError && (
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "#f87171",
+                      margin: "6px 0 0",
+                    }}
+                  >
+                    {ssnError}
+                  </p>
+                )}
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "#D6DEE8",
+                    opacity: 0.4,
+                    margin: "8px 0 0",
+                  }}
+                >
+                  🔒 256-bit encrypted · Not stored in plain text
+                </p>
+              </div>
+              <GoldButton
+                type="submit"
+                disabled={ssnLoading || ssnInput.length < 4}
+                style={{
+                  alignSelf: "flex-start",
+                  opacity: ssnLoading || ssnInput.length < 4 ? 0.6 : 1,
+                }}
+              >
+                {ssnLoading ? "Submitting…" : "Submit for Verification"}
+              </GoldButton>
+            </form>
+          </SectionCard>
+        </div>
+      </div>
+    );
+  }
 
   function handleFileSelect(file) {
     if (!file) return;

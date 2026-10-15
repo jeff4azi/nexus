@@ -43,10 +43,8 @@ export default function WithdrawalPage() {
   const { wallets, loading: walletsLoading } = useCryptoWallets();
   const { withdrawals, loading: wLoading } = useWithdrawals();
 
-  // Balance comes from profile.balance — set atomically by admin_review_deposit
   const available = Number(profile?.balance ?? 0);
 
-  // Pending withdrawals already deducted from balance, but show for info
   const pendingTotal = withdrawals
     .filter((w) => ["Pending", "Approved", "Processing"].includes(w.status))
     .reduce((s, w) => s + Number(w.amount), 0);
@@ -55,6 +53,8 @@ export default function WithdrawalPage() {
   const [amount, setAmount] = useState("");
   const [walletId, setWalletId] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [pin, setPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successData, setSuccessData] = useState(null);
@@ -85,20 +85,39 @@ export default function WithdrawalPage() {
     setStep(3);
   }
 
-  async function handleSubmit() {
+  function handleReviewNext() {
     if (!confirmed) return;
+    setError("");
+    setStep(4);
+  }
+
+  async function handleSubmit() {
+    if (pin.length !== 4) {
+      setError("Please enter your 4-digit transaction PIN.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
     const { data, error: rpcError } = await supabase.rpc("submit_withdrawal", {
       p_amount: numAmount,
       p_crypto_wallet_id: walletId ?? wallets[0]?.id,
+      p_pin: pin,
     });
 
     setSubmitting(false);
 
     if (rpcError) {
-      setError(rpcError.message);
+      const msg = rpcError.message ?? "";
+      if (msg.toLowerCase().includes("incorrect transaction pin")) {
+        setError("Incorrect PIN. Please try again.");
+      } else if (msg.toLowerCase().includes("no transaction pin set")) {
+        setError(
+          "You haven't set a transaction PIN yet. Go to Settings → Security to create one.",
+        );
+      } else {
+        setError(msg);
+      }
       return;
     }
 
@@ -239,7 +258,7 @@ export default function WithdrawalPage() {
         <div>
           {/* Step indicator */}
           <div style={{ display: "flex", gap: 0, marginBottom: 28 }}>
-            {["Enter Amount", "Select Wallet", "Review & Confirm"].map(
+            {["Enter Amount", "Select Wallet", "Review", "Enter PIN"].map(
               (s, i) => {
                 const active = step === i + 1,
                   done = step > i + 1;
@@ -293,7 +312,7 @@ export default function WithdrawalPage() {
                         {s}
                       </span>
                     </div>
-                    {i < 2 && (
+                    {i < 3 && (
                       <div
                         style={{
                           flex: 1,
@@ -758,9 +777,180 @@ export default function WithdrawalPage() {
                       ← Back
                     </GoldButton>
                     <GoldButton
+                      onClick={handleReviewNext}
+                      disabled={!confirmed}
+                      style={{ opacity: !confirmed ? 0.5 : 1 }}
+                    >
+                      <ArrowUpFromLine size={15} />
+                      Continue to PIN →
+                    </GoldButton>
+                  </div>
+                </SectionCard>
+              </motion.div>
+            )}
+
+            {/* Step 4 — Transaction PIN */}
+            {step === 4 && (
+              <motion.div
+                key="s4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <SectionCard title="Enter Transaction PIN">
+                  <p
+                    style={{
+                      fontSize: 14,
+                      color: "#D6DEE8",
+                      opacity: 0.7,
+                      marginBottom: 24,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    Enter your 4-digit transaction PIN to authorise this
+                    withdrawal of{" "}
+                    <strong style={{ color: "#C9A84C" }}>
+                      {fmt(numAmount)}
+                    </strong>
+                    .
+                  </p>
+                  <div style={{ maxWidth: 260 }}>
+                    <label
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#D6DEE8",
+                        opacity: 0.8,
+                        display: "block",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Transaction PIN
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type={showPin ? "text" : "password"}
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="••••"
+                        value={pin}
+                        onChange={(e) => {
+                          setPin(e.target.value.replace(/\D/g, "").slice(0, 4));
+                          setError("");
+                        }}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          background: "rgba(255,255,255,0.04)",
+                          border: `1px solid ${error ? "rgba(248,113,113,0.5)" : "rgba(201,168,76,0.2)"}`,
+                          borderRadius: 10,
+                          padding: "14px 44px 14px 16px",
+                          color: "#fff",
+                          fontSize: 22,
+                          fontWeight: 700,
+                          letterSpacing: 8,
+                          outline: "none",
+                          fontFamily: "DM Sans, sans-serif",
+                          textAlign: "center",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPin((p) => !p)}
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#C9A84C",
+                          display: "flex",
+                        }}
+                      >
+                        {showPin ? (
+                          <svg
+                            width="17"
+                            height="17"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                            <line x1="1" y1="1" x2="23" y2="23" />
+                          </svg>
+                        ) : (
+                          <svg
+                            width="17"
+                            height="17"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                    {error && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          padding: "10px 12px",
+                          background: "rgba(248,113,113,0.08)",
+                          border: "1px solid rgba(248,113,113,0.2)",
+                          borderRadius: 8,
+                          color: "#f87171",
+                          fontSize: 13,
+                          marginTop: 10,
+                        }}
+                      >
+                        <AlertCircle
+                          size={14}
+                          style={{ flexShrink: 0, marginTop: 1 }}
+                        />{" "}
+                        {error}
+                      </div>
+                    )}
+                    <p
+                      style={{
+                        fontSize: 12,
+                        color: "#D6DEE8",
+                        opacity: 0.4,
+                        margin: "10px 0 0",
+                      }}
+                    >
+                      Don't have a PIN?{" "}
+                      <a
+                        href="/portal/settings"
+                        style={{ color: "#C9A84C", textDecoration: "none" }}
+                      >
+                        Set one in Settings →
+                      </a>
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+                    <GoldButton
+                      variant="outline"
+                      onClick={() => {
+                        setStep(3);
+                        setPin("");
+                        setError("");
+                      }}
+                    >
+                      ← Back
+                    </GoldButton>
+                    <GoldButton
                       onClick={handleSubmit}
-                      disabled={!confirmed || submitting}
-                      style={{ opacity: !confirmed || submitting ? 0.5 : 1 }}
+                      disabled={pin.length !== 4 || submitting}
+                      style={{
+                        opacity: pin.length !== 4 || submitting ? 0.5 : 1,
+                      }}
                     >
                       <ArrowUpFromLine size={15} />
                       {submitting ? "Submitting…" : "Submit Withdrawal"}
