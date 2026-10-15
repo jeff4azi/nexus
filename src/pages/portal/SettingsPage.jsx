@@ -171,25 +171,12 @@ export default function SettingsPage() {
   const [pinSaved, setPinSaved] = useState(false);
 
   const [saved, setSaved] = useState(false);
+  // Only the vital email notifications — no need to spam every action
   const [notifPrefs, setNotifPrefs] = useState({
     depositEmail: true,
     withdrawalEmail: true,
-    planActivatedEmail: true,
-    maturityReminderEmail: true,
     maturedEmail: true,
-    statementEmail: false,
     newLoginEmail: true,
-    passwordChangedEmail: true,
-    kycEmail: true,
-    depositApp: true,
-    withdrawalApp: true,
-    planActivatedApp: true,
-    maturityReminderApp: true,
-    maturedApp: true,
-    statementApp: false,
-    newLoginApp: true,
-    passwordChangedApp: false,
-    kycApp: true,
   });
 
   const set = (f) => (v) => setForm((p) => ({ ...p, [f]: v }));
@@ -264,13 +251,8 @@ export default function SettingsPage() {
   const notifGroups = [
     { key: "depositEmail", label: "Deposit confirmed" },
     { key: "withdrawalEmail", label: "Withdrawal processed" },
-    { key: "planActivatedEmail", label: "Investment plan activated" },
-    { key: "maturityReminderEmail", label: "Plan maturity reminder (7 days)" },
-    { key: "maturedEmail", label: "Plan matured and payout credited" },
-    { key: "statementEmail", label: "Monthly statement ready" },
-    { key: "newLoginEmail", label: "Login from new device" },
-    { key: "passwordChangedEmail", label: "Password changed" },
-    { key: "kycEmail", label: "KYC status update" },
+    { key: "maturedEmail", label: "Investment plan matured & payout credited" },
+    { key: "newLoginEmail", label: "Sign-in from a new device" },
   ];
 
   return (
@@ -1162,22 +1144,42 @@ export default function SettingsPage() {
       {/* ── Notifications ── */}
       {activeTab === "Notifications" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <SectionCard title="Email Notifications">
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {notifGroups.map((n) => (
+          <SectionCard title="Email Alerts">
+            <p
+              style={{
+                fontSize: 13,
+                color: "#D6DEE8",
+                opacity: 0.55,
+                margin: "0 0 20px",
+                lineHeight: 1.6,
+              }}
+            >
+              We'll only email you for the things that actually matter. In-app
+              notifications are always on for all activity.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {notifGroups.map((n, i) => (
                 <div
                   key={n.key}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    padding: "16px 0",
+                    borderBottom:
+                      i < notifGroups.length - 1
+                        ? "1px solid rgba(255,255,255,0.05)"
+                        : "none",
+                    gap: 16,
                   }}
                 >
-                  <span
-                    style={{ fontSize: 14, color: "#D6DEE8", opacity: 0.8 }}
-                  >
-                    {n.label}
-                  </span>
+                  <div>
+                    <div
+                      style={{ fontSize: 14, color: "#fff", fontWeight: 500 }}
+                    >
+                      {n.label}
+                    </div>
+                  </div>
                   <Toggle
                     on={notifPrefs[n.key]}
                     onChange={(v) =>
@@ -1187,6 +1189,62 @@ export default function SettingsPage() {
                 </div>
               ))}
             </div>
+          </SectionCard>
+
+          <SectionCard title="In-App Notifications">
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                padding: "14px 16px",
+                background: "rgba(74,222,128,0.07)",
+                border: "1px solid rgba(74,222,128,0.2)",
+                borderRadius: 10,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>🔔</span>
+              <div>
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: "#fff",
+                    fontWeight: 500,
+                    margin: "0 0 4px",
+                  }}
+                >
+                  Always on
+                </p>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "#D6DEE8",
+                    opacity: 0.65,
+                    margin: 0,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Deposit confirmed · Withdrawal processed · Investment matured
+                  · KYC update · New device login
+                </p>
+              </div>
+            </div>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#D6DEE8",
+                opacity: 0.4,
+                margin: "12px 0 0",
+              }}
+            >
+              View all notifications on the{" "}
+              <a
+                href="/portal/notifications"
+                style={{ color: "#C9A84C", textDecoration: "none" }}
+              >
+                Notifications page
+              </a>
+              .
+            </p>
           </SectionCard>
         </div>
       )}

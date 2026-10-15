@@ -77,20 +77,60 @@ export function useNotifications() {
 
   useEffect(() => {
     if (!session?.user) return;
+    const userId = session.user.id;
+
+    // Initial fetch
     setLoading(true);
     supabase
       .from("notifications")
       .select("*")
-      .eq("user_id", session.user.id)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("[notifications]", error.message);
         else setNotifications(data ?? []);
         setLoading(false);
       });
+
+    // Real-time subscription — bell badge and list update instantly when
+    // admin inserts a notification (e.g. deposit approved, withdrawal paid)
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          setNotifications((prev) => [payload.new, ...prev]);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === payload.new.id ? payload.new : n)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [session?.user?.id]);
 
   async function markRead(id) {
+    // Optimistic update
     setNotifications((ns) =>
       ns.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
     );

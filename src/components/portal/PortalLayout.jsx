@@ -476,24 +476,26 @@ export default function PortalLayout({ children }) {
             © 2026 Nexus Yield Group. All rights reserved.
           </span>
           <div style={{ display: "flex", gap: 20 }}>
-            {["Privacy Policy", "Terms & Conditions", "Risk Disclaimer"].map(
-              (l) => (
-                <a
-                  key={l}
-                  href="#"
-                  style={{
-                    fontSize: 12,
-                    color: "#D6DEE8",
-                    opacity: 0.3,
-                    textDecoration: "none",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.3")}
-                >
-                  {l}
-                </a>
-              ),
-            )}
+            {[
+              { label: "Privacy Policy", href: "/privacy" },
+              { label: "Terms & Conditions", href: "/terms" },
+              { label: "Risk Disclaimer", href: "/disclosures" },
+            ].map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                style={{
+                  fontSize: 12,
+                  color: "#D6DEE8",
+                  opacity: 0.3,
+                  textDecoration: "none",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.3")}
+              >
+                {l.label}
+              </a>
+            ))}
           </div>
         </footer>
       </div>
