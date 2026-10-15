@@ -93,36 +93,41 @@ export function useNotifications() {
       });
 
     // Real-time subscription — bell badge and list update instantly when
-    // admin inserts a notification (e.g. deposit approved, withdrawal paid)
-    const channel = supabase
-      .channel(`notifications:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          setNotifications((prev) => [payload.new, ...prev]);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === payload.new.id ? payload.new : n)),
-          );
-        },
-      )
-      .subscribe();
+    // admin inserts a notification (e.g. deposit approved, withdrawal paid).
+    // Use crypto.randomUUID() so React Strict Mode's double-invoke never
+    // produces two channels with the same name on the same Supabase client.
+    const channelName = `notifications:${userId}:${crypto.randomUUID()}`;
+    const channel = supabase.channel(channelName);
+
+    channel.on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        setNotifications((prev) => [payload.new, ...prev]);
+      },
+    );
+
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "notifications",
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === payload.new.id ? payload.new : n)),
+        );
+      },
+    );
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
